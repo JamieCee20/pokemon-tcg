@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageFrame } from "../../components/AppLayout";
 import { assetImageUrl, cardImageUrl } from "../../lib/tcgdex/api";
@@ -12,7 +12,7 @@ import {
 import type { PackCard } from "./packData";
 import "./PackSimulatorPage.css";
 
-function PackBack() {
+function PackBack({ preparing = false }: { preparing?: boolean }) {
   return (
     <div className="pack-card__back" aria-label="Face-down Pokémon card">
       <span className="pack-card__back-ring" aria-hidden="true">
@@ -20,6 +20,9 @@ function PackBack() {
       </span>
       <span className="pack-card__back-title">CARD ATLAS</span>
       <span className="pack-card__back-caption">TRADING CARD GAME</span>
+      {preparing && (
+        <span className="pack-card__preparing">PREPARING ARTWORK…</span>
+      )}
     </div>
   );
 }
@@ -27,26 +30,37 @@ function PackBack() {
 function RevealedCard({
   card,
   index,
-  revealed,
-  current,
+  faceUp,
+  movingToBack,
+  imageReady,
+  disabled,
+  onClick,
 }: {
   card: PackCard;
   index: number;
-  revealed: boolean;
-  current: boolean;
+  faceUp: boolean;
+  movingToBack: boolean;
+  imageReady: boolean;
+  disabled: boolean;
+  onClick: () => void;
 }) {
   return (
-    <article
-      className={`pack-card${revealed ? " is-revealed" : ""}${current ? " is-current" : ""}${card.finish !== "normal" ? ` pack-card--${card.finish}` : ""} pack-card--${card.rarity}`}
+    <button
+      className={`pack-card${faceUp ? " is-face-up" : ""}${movingToBack ? " is-sending-to-back" : ""}${card.finish !== "normal" ? ` pack-card--${card.finish}` : ""} pack-card--${card.rarity}`}
+      type="button"
       aria-label={
-        revealed
-          ? `${card.name}, ${rarityLabel(card.rarity)}`
-          : `Card ${index + 1}, face down`
+        faceUp
+          ? `${card.name}, ${rarityLabel(card.rarity)}. Click to move it to the back of the stack.`
+          : imageReady
+            ? `Card ${index + 1}, face down. Click to reveal.`
+            : `Card ${index + 1}, face down. Preparing artwork.`
       }
-      aria-live={current ? "polite" : undefined}
+      aria-pressed={faceUp}
+      disabled={disabled}
+      onClick={onClick}
     >
       <div className="pack-card__inner">
-        <PackBack />
+        <PackBack preparing={!imageReady} />
         <div className="pack-card__front">
           {card.rarity === "energy" ? (
             <div
@@ -57,7 +71,13 @@ function RevealedCard({
               <small>Basic energy</small>
             </div>
           ) : card.image ? (
-            <img src={cardImageUrl(card.image, "high") ?? card.image} alt="" />
+            <img
+              src={cardImageUrl(card.image, "high") ?? card.image}
+              alt=""
+              decoding="sync"
+              fetchPriority="high"
+              loading="eager"
+            />
           ) : (
             <div className="pack-card__no-image">Artwork unavailable</div>
           )}
@@ -69,7 +89,35 @@ function RevealedCard({
           </div>
         </div>
       </div>
-    </article>
+    </button>
+  );
+}
+
+function DealtCard({ card, index }: { card: PackCard; index: number }) {
+  return (
+    <div
+      className={`pack-table-card pack-card--${card.finish !== "normal" ? card.finish : "normal"} pack-card--${card.rarity}`}
+      role="listitem"
+      aria-label={`${card.name}, ${rarityLabel(card.rarity)}`}
+      style={{ animationDelay: `${index * 75}ms` }}
+    >
+      <div className="pack-card__front">
+        {card.rarity === "energy" ? (
+          <div
+            className={`pack-energy pack-energy--${card.energyType ?? "grass"}`}
+          >
+            <span aria-hidden="true">{card.energySymbol ?? "✦"}</span>
+            <strong>{card.name}</strong>
+            <small>Basic energy</small>
+          </div>
+        ) : card.image ? (
+          <img src={cardImageUrl(card.image, "high") ?? card.image} alt="" />
+        ) : (
+          <div className="pack-card__no-image">Artwork unavailable</div>
+        )}
+        <div className="pack-card__foil" aria-hidden="true" />
+      </div>
+    </div>
   );
 }
 
@@ -79,8 +127,15 @@ export function PackSimulatorPage() {
   );
   const [pack, setPack] = useState<PackCard[] | null>(null);
   const [revealed, setRevealed] = useState(0);
+  const [decodedArtwork, setDecodedArtwork] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [currentFaceUp, setCurrentFaceUp] = useState(false);
+  const [movingToBack, setMovingToBack] = useState(false);
   const [opening, setOpening] = useState(false);
   const [packsOpened, setPacksOpened] = useState(0);
+  const openTimeout = useRef<number | null>(null);
+  const sendTimeout = useRef<number | null>(null);
   const profile =
     PACK_PROFILES.find((candidate) => candidate.setId === selectedSetId) ??
     DEFAULT_PACK_PROFILE;
@@ -94,25 +149,81 @@ export function PackSimulatorPage() {
   const catalogue = catalogueQuery.data;
   const setLogo = assetImageUrl(catalogue?.set.logo ?? null);
   const allRevealed = pack !== null && revealed >= pack.length;
+  const currentCard = pack && !allRevealed ? pack[revealed] : null;
+  const currentImageUrl = currentCard?.image
+    ? cardImageUrl(currentCard.image, "high")
+    : null;
+  const currentArtworkReady =
+    currentImageUrl === null || decodedArtwork.has(currentImageUrl);
+
+  useEffect(
+    () => () => {
+      if (openTimeout.current !== null) window.clearTimeout(openTimeout.current);
+      if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
+    },
+    [],
+  );
 
   function openPack() {
     if (!catalogue) return;
-    setPack(createPack(catalogue));
+    if (openTimeout.current !== null) window.clearTimeout(openTimeout.current);
+    if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
+    const nextPack = createPack(catalogue);
+    setPack(nextPack);
+    setDecodedArtwork(new Set());
+    const artworkUrls = new Set(
+      nextPack
+        .map((card) =>
+          card.image ? cardImageUrl(card.image, "high") : null,
+        )
+        .filter((imageUrl): imageUrl is string => imageUrl !== null),
+    );
+    for (const imageUrl of artworkUrls) {
+      const preload = new Image();
+      preload.decoding = "sync";
+      preload.src = imageUrl;
+      void preload
+        .decode()
+        .catch(() => undefined)
+        .then(() => {
+          setDecodedArtwork((ready) => new Set(ready).add(imageUrl));
+        });
+    }
     setRevealed(0);
+    setCurrentFaceUp(false);
+    setMovingToBack(false);
     setOpening(true);
     setPacksOpened((count) => count + 1);
-    window.setTimeout(() => setOpening(false), 650);
+    openTimeout.current = window.setTimeout(
+      () => setOpening(false),
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650,
+    );
   }
 
-  function revealNext() {
-    if (!pack || opening) return;
-    setRevealed((count) => Math.min(count + 1, pack.length));
+  function advanceCard() {
+    if (!pack || opening || movingToBack || allRevealed) return;
+    if (!currentFaceUp) {
+      setCurrentFaceUp(true);
+      return;
+    }
+
+    setMovingToBack(true);
+    sendTimeout.current = window.setTimeout(() => {
+      setRevealed((count) => Math.min(count + 1, pack.length));
+      setCurrentFaceUp(false);
+      setMovingToBack(false);
+    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 680);
   }
 
   function selectSet(setId: string) {
+    if (openTimeout.current !== null) window.clearTimeout(openTimeout.current);
+    if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
     setSelectedSetId(setId);
     setPack(null);
     setRevealed(0);
+    setDecodedArtwork(new Set());
+    setCurrentFaceUp(false);
+    setMovingToBack(false);
     setOpening(false);
   }
 
@@ -123,8 +234,8 @@ export function PackSimulatorPage() {
           <p className="eyebrow">CARD ATLAS · PACK LAB</p>
           <h1>Pack opening simulator</h1>
           <p>
-            Open a simulated English {profile.name} pack. Lower-rarity cards
-            reveal first, with the biggest pull saved for last.
+            Open a simulated English {profile.name} pack. Turn over one card at
+            a time, with the biggest pull saved for last.
           </p>
         </div>
         <div className="pack-page-heading__badge">
@@ -137,20 +248,50 @@ export function PackSimulatorPage() {
         className="pack-simulator"
         aria-label={`${profile.name} pack simulator`}
       >
-        <div className={`pack-wrapper${opening ? " is-opening" : ""}`}>
-          <div className="pack-wrapper__shine" aria-hidden="true" />
-          {setLogo ? (
-            <img className="pack-wrapper__logo" src={setLogo} alt="" />
-          ) : (
-            <span className="pack-wrapper__set-name">
-              {profile.code.split(" · ")[0]}
+        {pack ? (
+          <div
+            className={`pack-stack${opening ? " is-opening" : ""}${movingToBack ? " is-moving-card" : ""}`}
+            role="group"
+            aria-label="Pack card stack"
+          >
+            <span className="pack-stack__layer pack-stack__layer--top-outer" />
+            <span className="pack-stack__layer pack-stack__layer--top-inner" />
+            <span className="pack-stack__layer pack-stack__layer--bottom-inner" />
+            <span className="pack-stack__layer pack-stack__layer--bottom-outer" />
+            {allRevealed ? (
+              <div className="pack-stack__complete" role="status">
+                <span>PACK COMPLETE</span>
+                <strong>All {pack.length} cards revealed</strong>
+                <small>Open another pack to play again</small>
+              </div>
+            ) : (
+              <RevealedCard
+                card={pack[revealed]!}
+                index={revealed}
+                faceUp={currentFaceUp}
+                movingToBack={movingToBack}
+                imageReady={currentArtworkReady}
+                disabled={opening || movingToBack || !currentArtworkReady}
+                onClick={advanceCard}
+              />
+            )}
+          </div>
+        ) : (
+          <div className={`pack-wrapper${opening ? " is-opening" : ""}`}>
+            <div className="pack-wrapper__shine" aria-hidden="true" />
+            {setLogo ? (
+              <img className="pack-wrapper__logo" src={setLogo} alt="" />
+            ) : (
+              <span className="pack-wrapper__set-name">
+                {profile.code.split(" · ")[0]}
+              </span>
+            )}
+            <span className="pack-wrapper__label">{profile.seriesLabel}</span>
+            <span className="pack-wrapper__bottom">
+              {profile.packDescription}
             </span>
-          )}
-          <span className="pack-wrapper__label">{profile.seriesLabel}</span>
-          <span className="pack-wrapper__bottom">
-            {profile.packDescription}
-          </span>
-        </div>
+          </div>
+        )}
 
         <div className="pack-simulator__controls">
           <p className="eyebrow">YOUR NEXT PACK</p>
@@ -214,12 +355,18 @@ export function PackSimulatorPage() {
               <button
                 className="pack-button"
                 type="button"
-                disabled={opening}
-                onClick={revealNext}
+                disabled={opening || movingToBack || !currentArtworkReady}
+                onClick={advanceCard}
               >
                 {opening
-                  ? "Opening…"
-                  : `Reveal next card · ${revealed + 1} of ${pack.length}`}
+                  ? "Dealing cards…"
+                  : movingToBack
+                    ? "Moving card to the back…"
+                    : !currentArtworkReady
+                      ? "Preparing card artwork…"
+                      : currentFaceUp
+                        ? `Move card to the back · ${revealed + 1} of ${pack.length}`
+                        : `Turn over card · ${revealed + 1} of ${pack.length}`}
               </button>
             )}
             <span className="pack-simulator__session">
@@ -234,28 +381,41 @@ export function PackSimulatorPage() {
           <div className="pack-reveal__heading">
             <div>
               <p className="eyebrow">PACK {packsOpened}</p>
-              <h2>{allRevealed ? "Your pulls" : "The cards are waiting"}</h2>
+              <h2>{allRevealed ? "Your pulls" : "Card stack"}</h2>
             </div>
             <span>
-              {revealed} / {pack.length} revealed
+              {revealed} / {pack.length} cards placed at the back
             </span>
           </div>
-          <div className="pack-card-grid">
-            {pack.map((card, index) => (
-              <RevealedCard
-                key={`${packsOpened}-${index}-${card.id}`}
-                card={card}
-                index={index}
-                revealed={index < revealed}
-                current={index === revealed - 1}
-              />
-            ))}
-          </div>
+          {allRevealed && (
+            <div className="pack-table" role="list" aria-label="Your cards">
+              {pack.map((card, index) => (
+                <DealtCard
+                  key={`${packsOpened}-${index}-${card.id}`}
+                  card={card}
+                  index={index}
+                />
+              ))}
+            </div>
+          )}
           <p className="pack-reveal__hint">
             {allRevealed
-              ? "The card list is from TCGdex. Pull order is arranged from lower to higher rarity for the reveal."
-              : "Tap reveal to turn over the next card. The rarer pulls are held at the back of the stack."}
+              ? "The card list is from TCGdex. Your pulls were revealed from lower to higher rarity."
+              : currentFaceUp
+                ? "Click the face-up card to sweep it over the stack and place it at the back. The next card will be waiting face-down."
+                : "Click the top card or use the button to flip it over. The rarer pulls are saved for last."}
           </p>
+          {allRevealed && (
+            <ol className="pack-pull-list" aria-label="Revealed pack cards">
+              {pack.map((card, index) => (
+                <li key={`${packsOpened}-${index}-${card.id}`}>
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <strong>{card.name}</strong>
+                  <small>{rarityLabel(card.rarity)}</small>
+                </li>
+              ))}
+            </ol>
+          )}
         </section>
       )}
 

@@ -115,8 +115,19 @@ The production image builds the Vite app and serves its static files with Nginx.
 ### Requirements
 
 - A Linux server with [Docker Engine](https://docs.docker.com/engine/install/) and the [Docker Compose plugin](https://docs.docker.com/compose/install/) (`docker compose` command).
-- A Docker network already shared by the Nginx reverse proxy container.
+- An Nginx reverse proxy running in Docker and attached to a user-defined Docker network.
 - A subdomain configured in your DNS and reverse proxy.
+
+This Compose setup expects the reverse proxy to be a container on the shared Docker network. It does not publish the app on a host port.
+
+### Get the project files
+
+Clone the repository on the server and move into its root directory:
+
+```sh
+git clone git@github.com:JamieCee20/pokemon-tcg.git
+cd pokemon-tcg
+```
 
 ### Find the reverse proxy network
 
@@ -136,6 +147,7 @@ From the project root on the server, create `.env`:
 
 ```sh
 cp .env.example .env
+chmod 600 .env
 ```
 
 Edit `.env`, set the existing proxy network name, and add your RapidAPI key:
@@ -190,6 +202,7 @@ To check that both containers are on the shared network, run `docker network ins
 To deploy a later version, update the project files and rebuild from the project root:
 
 ```sh
+git pull --ff-only
 docker compose up -d --build
 ```
 
