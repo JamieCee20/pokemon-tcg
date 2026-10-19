@@ -428,6 +428,7 @@ export async function loadPackCatalogue(
   cards.pikachu = profile.guaranteedPikachu
     ? set.cards.filter((card) => card.name.toLowerCase() === "pikachu")
     : [];
+  cards.classicCollection = [];
   for (const [key, pool] of groups) cards[key] = pool;
 
   if (profile.setId === "30th") {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageFrame } from "../../components/AppLayout";
 import { assetImageUrl, cardImageUrl } from "../../lib/tcgdex/api";
+import type { CardSummary } from "../../lib/tcgdex/types";
 import {
   createPack,
   loadPackCatalogue,
@@ -11,6 +12,115 @@ import {
 } from "./packData";
 import type { PackCard } from "./packData";
 import "./PackSimulatorPage.css";
+
+const PACK_COLLECTION_STORAGE_KEY = "card-atlas.pack-collection.v1";
+
+function loadPackCollection(): Record<string, string[]> {
+  try {
+    const stored = window.localStorage.getItem(PACK_COLLECTION_STORAGE_KEY);
+    if (!stored) return {};
+    const parsed: unknown = JSON.parse(stored);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([setId, cardIds]) =>
+        Array.isArray(cardIds) && cardIds.every((id) => typeof id === "string")
+          ? [[setId, cardIds]]
+          : [],
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function compareCardNumbers(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true });
+}
+
+function CollectionRoadmap({
+  setName,
+  cards,
+  collectedIds,
+}: {
+  setName: string;
+  cards: CardSummary[];
+  collectedIds: Set<string>;
+}) {
+  const collectedCount = cards.filter((card) =>
+    collectedIds.has(card.id),
+  ).length;
+  const progress = cards.length > 0 ? (collectedCount / cards.length) * 100 : 0;
+
+  return (
+    <section
+      className="pack-collection"
+      aria-label={`${setName} collection progress`}
+    >
+      <div className="pack-collection__heading">
+        <div>
+          <p className="eyebrow">YOUR SET ROADMAP</p>
+          <h2>{setName} collection</h2>
+          <p>Cards are unlocked here when you reveal them in a pack.</p>
+        </div>
+        <strong className="pack-collection__count">
+          {collectedCount} <span>/ {cards.length} cards</span>
+        </strong>
+      </div>
+      <div
+        className="pack-collection__progress"
+        role="progressbar"
+        aria-label={`${setName} cards collected`}
+        aria-valuemin={0}
+        aria-valuemax={cards.length}
+        aria-valuenow={collectedCount}
+      >
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <div
+        className="pack-collection__grid"
+        role="list"
+        aria-label={`${setName} cards`}
+      >
+        {cards.map((card) => {
+          const collected = collectedIds.has(card.id);
+          const imageUrl = card.image ? cardImageUrl(card.image, "low") : null;
+          return (
+            <article
+              className={`pack-collection-card${collected ? " is-collected" : " is-locked"}`}
+              key={card.id}
+              role="listitem"
+              aria-label={`${card.name}, card ${card.localId}, ${collected ? "unlocked" : "not yet unlocked"}`}
+            >
+              <div className="pack-collection-card__artwork">
+                {imageUrl || card.image ? (
+                  <img
+                    src={imageUrl ?? card.image ?? undefined}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <span>#{card.localId}</span>
+                )}
+                {!collected && (
+                  <span className="pack-collection-card__lock">Locked</span>
+                )}
+              </div>
+              <strong>{card.name}</strong>
+              <small>#{card.localId}</small>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 function PackBack({ preparing = false }: { preparing?: boolean }) {
   return (
@@ -134,6 +244,8 @@ export function PackSimulatorPage() {
   const [movingToBack, setMovingToBack] = useState(false);
   const [opening, setOpening] = useState(false);
   const [packsOpened, setPacksOpened] = useState(0);
+  const [collection, setCollection] =
+    useState<Record<string, string[]>>(loadPackCollection);
   const openTimeout = useRef<number | null>(null);
   const sendTimeout = useRef<number | null>(null);
   const profile =
@@ -147,6 +259,16 @@ export function PackSimulatorPage() {
     retry: false,
   });
   const catalogue = catalogueQuery.data;
+  const collectionCards = catalogue
+    ? [
+        ...catalogue.set.cards,
+        ...(catalogue.cards.classicCollection ?? []).filter(
+          (card) =>
+            !catalogue.set.cards.some((setCard) => setCard.id === card.id),
+        ),
+      ].sort((left, right) => compareCardNumbers(left.localId, right.localId))
+    : [];
+  const collectedIds = new Set(collection[selectedSetId] ?? []);
   const setLogo = assetImageUrl(catalogue?.set.logo ?? null);
   const allRevealed = pack !== null && revealed >= pack.length;
   const currentCard = pack && !allRevealed ? pack[revealed] : null;
@@ -158,11 +280,24 @@ export function PackSimulatorPage() {
 
   useEffect(
     () => () => {
-      if (openTimeout.current !== null) window.clearTimeout(openTimeout.current);
-      if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
+      if (openTimeout.current !== null)
+        window.clearTimeout(openTimeout.current);
+      if (sendTimeout.current !== null)
+        window.clearTimeout(sendTimeout.current);
     },
     [],
   );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        PACK_COLLECTION_STORAGE_KEY,
+        JSON.stringify(collection),
+      );
+    } catch {
+      // The simulator remains usable when browser storage is unavailable.
+    }
+  }, [collection]);
 
   function openPack() {
     if (!catalogue) return;
@@ -173,9 +308,7 @@ export function PackSimulatorPage() {
     setDecodedArtwork(new Set());
     const artworkUrls = new Set(
       nextPack
-        .map((card) =>
-          card.image ? cardImageUrl(card.image, "high") : null,
-        )
+        .map((card) => (card.image ? cardImageUrl(card.image, "high") : null))
         .filter((imageUrl): imageUrl is string => imageUrl !== null),
     );
     for (const imageUrl of artworkUrls) {
@@ -203,16 +336,29 @@ export function PackSimulatorPage() {
   function advanceCard() {
     if (!pack || opening || movingToBack || allRevealed) return;
     if (!currentFaceUp) {
+      if (currentCard && currentCard.rarity !== "energy") {
+        setCollection((previous) => {
+          const existing = previous[selectedSetId] ?? [];
+          if (existing.includes(currentCard.id)) return previous;
+          return {
+            ...previous,
+            [selectedSetId]: [...existing, currentCard.id],
+          };
+        });
+      }
       setCurrentFaceUp(true);
       return;
     }
 
     setMovingToBack(true);
-    sendTimeout.current = window.setTimeout(() => {
-      setRevealed((count) => Math.min(count + 1, pack.length));
-      setCurrentFaceUp(false);
-      setMovingToBack(false);
-    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 680);
+    sendTimeout.current = window.setTimeout(
+      () => {
+        setRevealed((count) => Math.min(count + 1, pack.length));
+        setCurrentFaceUp(false);
+        setMovingToBack(false);
+      },
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 680,
+    );
   }
 
   function selectSet(setId: string) {
@@ -446,6 +592,14 @@ export function PackSimulatorPage() {
           </div>
         </div>
       </aside>
+
+      {catalogue && (
+        <CollectionRoadmap
+          setName={catalogue.set.name}
+          cards={collectionCards}
+          collectedIds={collectedIds}
+        />
+      )}
     </PageFrame>
   );
 }
