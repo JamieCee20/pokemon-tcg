@@ -1,0 +1,57 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      pricing-api:
+        condition: service_healthy
+    expose:
+      - "80"
+    networks:
+      reverse-proxy:
+        aliases:
+          - card-atlas
+      app-internal: {}
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  pricing-api:
+    build:
+      context: .
+      target: pricing-api
+    restart: unless-stopped
+    environment:
+      POKEMON_API_KEY: ${POKEMON_API_KEY:-}
+      POKEMON_PRICE_DAILY_LIMIT: ${POKEMON_PRICE_DAILY_LIMIT:-90}
+      APITCG_API_KEY: ${APITCG_API_KEY:-}
+      APITCG_DAILY_REQUEST_LIMIT: ${APITCG_DAILY_REQUEST_LIMIT:-2}
+      APITCG_CACHE_FILE: /data/apitcg-cache.json
+    volumes:
+      - apitcg-cache:/data
+    expose:
+      - "3001"
+    networks:
+      - app-internal
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:3001/healthz || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  reverse-proxy:
+    name: ${DOCKER_NETWORK:-proxy}
+    external: true
+  app-internal:
+volumes:
+  apitcg-cache:
