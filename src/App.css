@@ -1411,6 +1411,60 @@
   text-underline-offset: 2px;
 }
 
+.license-page {
+  max-width: 900px;
+}
+.license-page__intro,
+.license-page__notice {
+  max-width: 720px;
+  color: var(--color-muted);
+  line-height: 1.7;
+}
+.license-page__intro {
+  margin: 0 0 24px;
+}
+.license-card {
+  margin: 14px 0;
+  padding: clamp(20px, 4vw, 30px);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 2%);
+}
+.license-card .eyebrow {
+  margin: 0 0 8px;
+}
+.license-card h2 {
+  margin: 0 0 12px;
+  color: var(--color-text);
+  font-size: 22px;
+}
+.license-card p:not(.eyebrow) {
+  max-width: 740px;
+  color: var(--color-muted);
+  line-height: 1.7;
+}
+.license-card__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin: 18px 0 0;
+}
+.license-card__links a,
+.license-page__full-notice {
+  color: #b8a06e;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.license-page__notice {
+  margin: 24px 0 12px;
+  font-size: 13px;
+}
+.license-page__full-notice {
+  display: inline-block;
+  margin-bottom: 30px;
+  font-size: 13px;
+}
+
 @media (max-width: 850px) {
   .site-header__inner {
     width: min(100% - 40px, 720px);

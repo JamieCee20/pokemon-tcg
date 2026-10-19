@@ -46,6 +46,26 @@ export default defineConfig({
           });
         },
       },
+      "/api/account": {
+        target: "http://127.0.0.1:3002",
+        configure(proxy) {
+          proxy.on("error", (_error, _request, response) => {
+            if ("writeHead" in response && !response.headersSent) {
+              response.writeHead(502, {
+                "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": "no-store",
+              });
+              response.end(
+                JSON.stringify({
+                  error:
+                    "Account service is unavailable. Start the progress-api server and try again.",
+                  code: "account_service_unavailable",
+                }),
+              );
+            }
+          });
+        },
+      },
     },
   },
 });

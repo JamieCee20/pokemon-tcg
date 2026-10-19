@@ -8,7 +8,6 @@ import {
 } from "../../lib/storage/local";
 import { ErrorState } from "../../components/States";
 import { PageFrame } from "../../components/AppLayout";
-import { FavouriteButton } from "./CardTile";
 import { CardArtwork } from "./CardArtwork";
 import { CardPricing } from "./CardPricing";
 import { useLanguage } from "../../lib/tcgdex/useLanguage";
@@ -154,7 +153,6 @@ export function CardDetailsPage() {
           ← Back to browsing
         </button>
         <div className="detail-actions">
-          <FavouriteButton cardId={card.id} name={card.name} />
           <button
             className="effect-toggle"
             type="button"

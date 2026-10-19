@@ -19,6 +19,18 @@ EXPOSE 3001
 USER node
 CMD ["node", "pricing-api.mjs"]
 
+FROM node:24-alpine AS progress-api
+
+WORKDIR /app
+COPY server/progress-api.mjs ./server/progress-api.mjs
+COPY config/pack-sets.json ./config/pack-sets.json
+RUN mkdir -p /data && chown node:node /data
+ENV NODE_ENV=production
+ENV ACCOUNT_DB_FILE=/data/account-progress.sqlite
+EXPOSE 3002
+USER node
+CMD ["node", "server/progress-api.mjs"]
+
 FROM nginx:alpine AS runtime
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf

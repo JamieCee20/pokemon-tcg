@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:pricing": "node --env-file=.env server/pricing-api.mjs",
+    "dev:progress": "node server/progress-api.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "typecheck": "tsc -b",

@@ -1,16 +1,19 @@
 # Card Atlas
 
-A local Pokémon TCG catalogue for browsing sets and cards in multiple languages, viewing card details and market prices, and keeping browser-local favourites. Card data and artwork come from TCGdex; market prices come from Pokemon API. This is an unofficial fan project; it is not affiliated with Nintendo, Creatures Inc. or GAME FREAK.
+A local Pokémon TCG catalogue for browsing sets and cards in multiple languages, viewing card details and market prices, and keeping browser-local favourites. Card data and artwork come from TCGdex; market prices come from Pokemon API. This is an unofficial fan project; it is not affiliated with Nintendo, Creatures Inc., GAME FREAK, or The Pokémon Company.
+
+Third-party data sources and API licensing notices are available in [THIRD_PARTY_NOTICES.md](public/THIRD_PARTY_NOTICES.md) and from the application's **Licenses & data sources** page. TCGdex states that its database is MIT-licensed. The TCGdex notice is included in that file; API-provider data access remains subject to the relevant provider terms and account plan. This repository does not declare a license for Card Atlas's own source code.
 
 The app needs an internet connection for fresh catalogue data and uncached artwork. It does not download artwork for offline use.
 
 ## Requirements and commands
 
-Use Node.js 20.19+ or 22.12+ and npm. The project was scaffolded from Vite's React TypeScript template; use `package-lock.json` to install the exact dependency tree.
+Use Node.js 22.13+ and npm for the frontend and account API. Node 24.15+ is recommended. The account API uses Node's built-in SQLite module; use `package-lock.json` to install the exact frontend dependency tree.
 
 ```sh
 npm ci
 npm run dev
+npm run dev:progress
 npm run lint
 npm run typecheck
 npm run test
@@ -19,6 +22,7 @@ npm run preview
 ```
 
 Vite prints the local development URL after `npm run dev` starts.
+Run `npm run dev:progress` in a second terminal to use accounts and XP locally. The API stores its SQLite database under the ignored `data/` directory. Run `npm run dev:pricing` separately if you also want market prices and APITCG features.
 
 ## Features
 
@@ -31,11 +35,16 @@ Vite prints the local development URL after `npm run dev` starts.
 - Set pages can sort card numbers in either direction or sort by TCGplayer market price or Cardmarket near-mint price. Price sorting uses the provider's batch lookup in groups of at most 20 cards; cards without a matching price stay at the end.
 - The separate APITCG explorer previews product images, card and set details, TCGplayer printing prices, and raw product records. Searches use the server proxy and its persistent 24-hour cache and daily request cap.
 - Favourites store card IDs separately for each selected language in local storage. Their records are resolved with a four-request concurrency cap; IDs remain removable when a card is unavailable.
+- The pack simulator supports guest openings of the starter set and email/password accounts with ULID user IDs, an optional preset avatar, synced collection progress, XP, daily streaks, and XP-unlocked sets. XP is awarded for a pack's first reveal, a newly collected card, the account's first foil and first full-art pull, completed packs, and daily streak activity. Set unlocking costs XP.
+- The account API checks the English TCGdex set records before offering a pack set. Sets are available only when every card record (including any bonus subset) contains a TCGdex image URL.
+- `config/pack-sets.json` is shared by the pack UI and account API. Its array order controls how sets are listed, and each entry sets the XP cost and pack size. Move entries to change the progression order; the next unlock still depends on XP rather than completing the previous set.
 
 ## Structure
 
 - `src/lib/tcgdex/` contains the API adapter, provider-to-app mapping, image URL helpers and app-level types.
 - `server/pricing-api.mjs` keeps provider keys server-side, proxies exact card-ID price lookups, and provides a bounded APITCG trial proxy with a persistent cache.
+- `server/progress-api.mjs` provides email/password accounts, secure sessions, artwork-eligible pack set metadata, and SQLite-backed collection and progression storage.
+- `src/features/account/` contains account forms, profile settings, set unlocks, and the account API client.
 - `src/features/sets/` handles progressive set enrichment, release-year grouping and set browsing.
 - `src/features/cards/` contains remote and set-scoped search, card details, card artwork and the tilt effect.
 - `src/features/apitcg/` contains the separate APITCG product data explorer.
@@ -48,7 +57,7 @@ TanStack Query caches remote resources, the hash router keeps browse filters boo
 
 The adapter uses the official `@tcgdex/sdk` for full set and card lookups, with a client for the selected language. It replaces the SDK's browser local-storage cache with its in-memory cache, so full set card arrays are not persisted. It uses the documented REST API for brief set lists, Pocket series membership and paginated name search so those requests can receive an `AbortSignal`. SDK lookups do not accept an abort signal in the documented method examples; the adapter discards their results if the route/query was cancelled. SDK and application models are kept behind the adapter. If the SDK cannot initialize because browser storage access is blocked, full set and card requests use the same REST adapter fallback.
 
-The current TCGdex references document that brief set entries contain logo, symbol and card counts but no release date; full set entries add `releaseDate`, series information and card briefs. Search supports name filtering and opt-in pagination, while card and set assets use an API-provided asset base with `.webp` variants. A live smoke check on 19 October 2026 confirmed the English sets list, full set, paginated card search and full card endpoints returned HTTP 200. The sampled brief search omitted set information, while the full card included its set relationship. All four endpoint responses included `Access-Control-Allow-Origin: *`, so no development proxy was needed.
+The current TCGdex references document that brief set entries contain logo, symbol and card counts but no release date; full set entries add `releaseDate`, series information and card briefs. Search supports name filtering and opt-in pagination, while card and set assets use an API-provided asset base with `.webp` variants. A live smoke check on 19 October 2026 confirmed the English sets list, full set, paginated card search and full card endpoints returned HTTP 200. The sampled brief search omitted set information, while the full card included its set relationship. All four endpoint responses included `Access-Control-Allow-Origin: *`, so no development proxy was needed. The progress API checks the card image references on full English set records and caches that eligibility result for 12 hours.
 
 Language coverage varies across TCGdex collections. The app keeps separate catalogue caches and favourites for each selected language. Pocket expansions such as “Space-Time Smackdown” and “Celestial Guardians” are from the separate Pokémon TCG Pocket series; they appear in the Pocket tab, not the physical-set tab. An English Pocket image is an English-language digital Pocket card, not a Japanese or Chinese physical card.
 
@@ -100,17 +109,19 @@ Currency conversion rates are fetched server-side from [Frankfurter](https://fra
 
 Plan limits and any charges are managed by RapidAPI. Subscribe to the provider's [CardMarket API TCG product](https://rapidapi.com/tcggopro/api/cardmarket-api-tcg), which is the host used by the [TCGGO API v1 documentation](https://www.tcggo.com/api-docs/v1/). The [Pokemon API site](https://www.pokemon-api.com/) links to the same provider.
 
-The TCGdex documentation was checked on 19 October 2026. The Vite version in the lockfile supports Node.js 20.19+ or 22.12+; use a current supported Node release if the package manager reports a stricter template requirement. No browser automation was available in this environment, so visual checks at mobile/tablet/desktop widths still need to be done in a browser.
+The Vite version in the lockfile supports Node.js 20.19+ or 22.12+, but the account API needs Node.js 22.13+ for the built-in SQLite module. See the [Node.js SQLite documentation](https://nodejs.org/api/sqlite.html). The Docker image uses Node 24. No browser automation was available in this environment, so visual checks at mobile/tablet/desktop widths still need to be done in a browser.
 
 ## Local data and reset
 
-The browser stores the English set summary index under `card-atlas.set-catalogue.v2` and other language indexes with a language suffix, such as `card-atlas.set-catalogue.v2.ja`. Favourites use `card-atlas.favourites.v1` for English and a language suffix for other languages. The selected language is stored under `card-atlas.catalogue-language.v1`; the price currency uses `card-atlas.price-currency.v1`, and the card-effect preference uses `card-atlas.card-effect.v1`. Clear these keys in the browser's developer tools to reset individual app data. Clearing browser storage also removes favourites. Catalogue caches expire after 24 hours; card search and details use a 10-minute query stale time.
+The browser stores the English set summary index under `card-atlas.set-catalogue.v2` and other language indexes with a language suffix, such as `card-atlas.set-catalogue.v2.ja`. Favourites use `card-atlas.favourites.v1` for English and a language suffix for other languages. Guest pack progress uses `card-atlas.pack-collection.v1`. The selected language is stored under `card-atlas.catalogue-language.v1`; the price currency uses `card-atlas.price-currency.v1`, and the card-effect preference uses `card-atlas.card-effect.v1`. Clear these keys in the browser's developer tools to reset individual app data. Clearing browser storage also removes favourites and guest collection progress. Catalogue caches expire after 24 hours; card search and details use a 10-minute query stale time.
 
-The app is not offline-first. It does not provide accounts, owned quantities, or offline image downloads. Price data requires a configured provider key and an internet connection.
+Account collection, XP, streak, and set unlock data is stored in the server's `account-progress` Docker volume. Guest collection data remains in that browser. Account passwords are stored as scrypt hashes, and session tokens are stored as hashes. Email verification and email password recovery are not configured; signed-in users can change their password from the account page. The app does not represent ownership of physical cards or provide offline image downloads.
+
+The next progress API deployment applies a one-time progression reset to existing accounts: XP and paid set unlocks are cleared, the first configured set is re-unlocked, and one-time XP achievement flags are reset. Saved card collections, streak state, accounts, passwords, and sessions are retained.
 
 ## Deploy with Docker on a server
 
-The production image builds the Vite app and serves its static files with Nginx. The app container joins an existing external Docker network so your Nginx reverse proxy can reach it by the stable name `card-atlas`. The app does not publish a host port; your existing proxy remains responsible for public HTTP/HTTPS and certificates.
+The production image builds the Vite app and serves its static files with Nginx. The `web` container joins an existing external Docker network so your Nginx reverse proxy can reach it by the stable name `card-atlas`. The `pricing-api` and `progress-api` containers stay on the private app network and have no published host ports. Your existing proxy remains responsible for public HTTP/HTTPS and certificates.
 
 ### Requirements
 
@@ -173,7 +184,7 @@ docker compose ps
 docker compose logs -f web
 ```
 
-The `web` container exposes port 80 only inside the shared Docker network. Compose adds the network alias `card-atlas`; point the Nginx reverse proxy at `http://card-atlas:80`. The `pricing-api` service has no published port and is reachable only by the app's Nginx container on its private Docker network.
+The `web` container exposes port 80 only inside the shared Docker network. Compose adds the network alias `card-atlas`; point the Nginx reverse proxy at `http://card-atlas:80`. The `pricing-api` and `progress-api` services have no published ports and are reachable only by the app's Nginx container on its private Docker network. Compose creates the persistent `account-progress` volume for account and progression records. Back it up with your server's other application data; do not use `docker compose down -v` unless you intend to delete account data.
 
 ### Add the Nginx subdomain route
 

@@ -73,31 +73,20 @@ export function AppLayout() {
               Explore cards
             </NavLink>
             <NavLink
-              to={`/favourites?lang=${language}`}
-              className={({ isActive }) =>
-                isActive ? "main-nav__link is-active" : "main-nav__link"
-              }
-            >
-              Favourites{" "}
-              <span className="nav-heart" aria-hidden="true">
-                ♡
-              </span>
-            </NavLink>
-            <NavLink
-              to="/apitcg"
-              className={({ isActive }) =>
-                isActive ? "main-nav__link is-active" : "main-nav__link"
-              }
-            >
-              API explorer
-            </NavLink>
-            <NavLink
               to="/packs"
               className={({ isActive }) =>
                 isActive ? "main-nav__link is-active" : "main-nav__link"
               }
             >
               Pack opening
+            </NavLink>
+            <NavLink
+              to="/account"
+              className={({ isActive }) =>
+                isActive ? "main-nav__link is-active" : "main-nav__link"
+              }
+            >
+              Account
             </NavLink>
           </nav>
           <HeaderSearch
@@ -114,12 +103,13 @@ export function AppLayout() {
       <footer className="site-footer">
         <span>Card Atlas is an unofficial fan project.</span>
         <span>
-          Card data and artwork by{" "}
-          <a href="https://tcgdex.net" target="_blank" rel="noreferrer">
+          Card data and artwork are provided by{" "}
+          <a href="https://tcgdex.dev" target="_blank" rel="noreferrer">
             TCGdex
           </a>
           .
         </span>
+        <Link to="/licenses">Licenses & data sources</Link>
       </footer>
     </div>
   );

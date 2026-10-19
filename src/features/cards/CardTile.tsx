@@ -1,30 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import type { CardSummary } from "../../lib/tcgdex/types";
-import { useFavourites } from "../favourites/useFavourites";
 import { CardArtwork } from "./CardArtwork";
 import { useLanguage } from "../../lib/tcgdex/useLanguage";
-
-export function FavouriteButton({
-  cardId,
-  name,
-}: {
-  cardId: string;
-  name: string;
-}) {
-  const favourites = useFavourites();
-  const saved = favourites.contains(cardId);
-  return (
-    <button
-      className={`favourite-button${saved ? " is-saved" : ""}`}
-      type="button"
-      aria-label={`${saved ? "Remove" : "Add"} ${name} ${saved ? "from" : "to"} favourites`}
-      aria-pressed={saved}
-      onClick={() => favourites.toggle(cardId)}
-    >
-      <span aria-hidden="true">{saved ? "♥" : "♡"}</span>
-    </button>
-  );
-}
 
 export function CardTile({
   card,
@@ -53,7 +30,6 @@ export function CardTile({
             name={card.name}
           />
         </Link>
-        <FavouriteButton cardId={card.id} name={card.name} />
       </div>
       <div className="card-tile__meta">
         <div className="card-tile__heading">

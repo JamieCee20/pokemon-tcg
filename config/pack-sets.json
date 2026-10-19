@@ -1,0 +1,123 @@
+[
+  {
+    "id": "sv09",
+    "name": "Journey Together",
+    "xpCost": 0,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "sv08",
+    "name": "Surging Sparks",
+    "xpCost": 350,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "sv07",
+    "name": "Stellar Crown",
+    "xpCost": 800,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "sv06",
+    "name": "Twilight Masquerade",
+    "xpCost": 1500,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "sv03.5",
+    "name": "Scarlet & Violet—151",
+    "xpCost": 2500,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "sv4.5",
+    "name": "Paldean Fates",
+    "xpCost": 4000,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "me05",
+    "name": "Pitch Black",
+    "xpCost": 4500,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "sv10.5b",
+    "name": "Black Bolt",
+    "xpCost": 5000,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "sv10.5w",
+    "name": "White Flare",
+    "xpCost": 5500,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "me04",
+    "name": "Chaos Rising",
+    "xpCost": 6000,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "me03",
+    "name": "Perfect Order",
+    "xpCost": 6500,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "me02",
+    "name": "Phantasmal Flames",
+    "xpCost": 7000,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "sv08.5",
+    "name": "Prismatic Evolutions",
+    "xpCost": 7500,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "me01",
+    "name": "Mega Evolution",
+    "xpCost": 8000,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "sv10",
+    "name": "Destined Rivals",
+    "xpCost": 8500,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "me02.5",
+    "name": "Ascended Heroes",
+    "xpCost": 9000,
+    "cardsPerPack": 11,
+    "extras": []
+  },
+  {
+    "id": "30th",
+    "name": "30th Celebration",
+    "xpCost": 9500,
+    "cardsPerPack": 6,
+    "extras": [
+      "30th-c"
+    ]
+  }
+]

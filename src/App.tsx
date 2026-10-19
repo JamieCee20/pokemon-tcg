@@ -9,15 +9,14 @@ import { AppLayout, PageFrame } from "./components/AppLayout";
 import { EmptyState } from "./components/States";
 import { CardDetailsPage } from "./features/cards/CardDetailsPage";
 import { CardSearchPage } from "./features/cards/CardSearchPage";
-import { FavouritesProvider } from "./features/favourites/FavouritesProvider";
-import { FavouritesPage } from "./features/favourites/FavouritesPage";
-import { ApitcgExplorerPage } from "./features/apitcg/ApitcgExplorerPage";
+import { AccountProvider } from "./features/account/AccountContext";
+import { AccountPage } from "./features/account/AccountPage";
 import { PackSimulatorPage } from "./features/packs/PackSimulatorPage";
+import { LicensesPage } from "./features/legal/LicensesPage";
 import { SetPage } from "./features/sets/SetPage";
 import { SetsPage } from "./features/sets/SetsPage";
 import { CurrencyProvider } from "./lib/pricing/CurrencyContext";
 import { LanguageProvider } from "./lib/tcgdex/LanguageContext";
-import { useLanguage } from "./lib/tcgdex/useLanguage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,22 +47,20 @@ const router = createHashRouter([
       { path: "sets/:setId", element: <SetPage /> },
       { path: "cards", element: <CardSearchPage /> },
       { path: "cards/:cardId", element: <CardDetailsPage /> },
-      { path: "favourites", element: <FavouritesPage /> },
-      { path: "apitcg", element: <ApitcgExplorerPage /> },
       { path: "packs", element: <PackSimulatorPage /> },
+      { path: "account", element: <AccountPage /> },
+      { path: "licenses", element: <LicensesPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],
   },
 ]);
 
 function AppContent() {
-  const { language } = useLanguage();
-
   return (
     <QueryClientProvider client={queryClient}>
-      <FavouritesProvider language={language}>
+      <AccountProvider>
         <RouterProvider router={router} />
-      </FavouritesProvider>
+      </AccountProvider>
     </QueryClientProvider>
   );
 }

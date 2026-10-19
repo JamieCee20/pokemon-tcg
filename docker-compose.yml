@@ -5,6 +5,8 @@ services:
     depends_on:
       pricing-api:
         condition: service_healthy
+      progress-api:
+        condition: service_healthy
     expose:
       - "80"
     networks:
@@ -48,6 +50,30 @@ services:
       retries: 3
       start_period: 5s
 
+  progress-api:
+    build:
+      context: .
+      target: progress-api
+    restart: unless-stopped
+    environment:
+      ACCOUNT_DB_FILE: /data/account-progress.sqlite
+    volumes:
+      - account-progress:/data
+    expose:
+      - "3002"
+    networks:
+      - app-internal
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:3002/healthz || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
 networks:
   reverse-proxy:
     name: ${DOCKER_NETWORK:-proxy}
@@ -55,3 +81,4 @@ networks:
   app-internal:
 volumes:
   apitcg-cache:
+  account-progress:

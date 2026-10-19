@@ -1,5 +1,6 @@
 import { getSet } from "../../lib/tcgdex/api";
 import type { CardSummary, SetSummary } from "../../lib/tcgdex/types";
+import packSetConfig from "../../../config/pack-sets.json";
 
 export type PackRarity =
   | "common"
@@ -12,6 +13,10 @@ export type PackRarity =
   | "hyperRare"
   | "megaAttackRare"
   | "megaHyperRare"
+  | "blackWhiteRare"
+  | "aceSpecRare"
+  | "shinyRare"
+  | "shinyUltraRare"
   | "classicCollection"
   | "futureRare"
   | "pikachu";
@@ -43,7 +48,7 @@ export interface PackProfile {
 
 const pullnomicsSource = "https://pullnomics.com/pull-rates";
 
-export const PACK_PROFILES: PackProfile[] = [
+const PACK_PROFILE_DATA: PackProfile[] = [
   {
     setId: "sv03.5",
     name: "Scarlet & Violet—151",
@@ -307,7 +312,423 @@ export const PACK_PROFILES: PackProfile[] = [
     rateNote:
       "This observed sample is early; the rarest-tier estimates may shift as more packs are recorded.",
   },
+  {
+    setId: "me04",
+    name: "Chaos Rising",
+    code: "CHR · EN",
+    seriesLabel: "MEGA EVOLUTION",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      { rarity: "doubleRare", percent: 22.22, odds: "1 in 4.5", slot: "rare" },
+      {
+        rarity: "illustrationRare",
+        percent: 10.53,
+        odds: "1 in 9.5",
+        slot: "bonus",
+      },
+      { rarity: "ultraRare", percent: 6.06, odds: "1 in 16.5", slot: "rare" },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.21,
+        odds: "1 in 82.5",
+        slot: "bonus",
+      },
+      {
+        rarity: "megaHyperRare",
+        percent: 0.103,
+        odds: "1 in 975",
+        slot: "bonus",
+      },
+    ],
+    sourceLabel: "Observed pull-rate data by set",
+    sourceUrl: pullnomicsSource,
+    rateNote:
+      "Community-observed rates, not official guarantees. The rarest-tier estimate is based on a small sample.",
+  },
+  {
+    setId: "me03",
+    name: "Perfect Order",
+    code: "PFO · EN",
+    seriesLabel: "MEGA EVOLUTION",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      {
+        rarity: "illustrationRare",
+        percent: 11.11,
+        odds: "1 in 9",
+        slot: "bonus",
+      },
+      { rarity: "ultraRare", percent: 9.09, odds: "1 in 11", slot: "rare" },
+      { rarity: "megaAttackRare", percent: 2.5, odds: "1 in 40", slot: "rare" },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.25,
+        odds: "1 in 80",
+        slot: "bonus",
+      },
+      {
+        rarity: "megaHyperRare",
+        percent: 0.071,
+        odds: "1 in 1,400",
+        slot: "bonus",
+      },
+    ],
+    sourceLabel: "Observed pull-rate data by set",
+    sourceUrl: pullnomicsSource,
+    rateNote:
+      "Community-observed rates, not official guarantees. The rarest-tier estimate is based on a small sample.",
+  },
+  {
+    setId: "me02",
+    name: "Phantasmal Flames",
+    code: "PHF · EN",
+    seriesLabel: "MEGA EVOLUTION",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      {
+        rarity: "illustrationRare",
+        percent: 11.11,
+        odds: "1 in 9",
+        slot: "bonus",
+      },
+      { rarity: "ultraRare", percent: 8.33, odds: "1 in 12", slot: "rare" },
+      { rarity: "megaAttackRare", percent: 2.5, odds: "1 in 40", slot: "rare" },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.25,
+        odds: "1 in 80",
+        slot: "bonus",
+      },
+      {
+        rarity: "megaHyperRare",
+        percent: 0.079,
+        odds: "1 in 1,260",
+        slot: "bonus",
+      },
+    ],
+    sourceLabel: "Observed pull-rate data by set",
+    sourceUrl: pullnomicsSource,
+    rateNote:
+      "Community-observed rates, not official guarantees. The rarest-tier estimate is based on a small sample.",
+  },
+  {
+    setId: "me01",
+    name: "Mega Evolution",
+    code: "MEG · EN",
+    seriesLabel: "MEGA EVOLUTION",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      { rarity: "doubleRare", percent: 20, odds: "1 in 5", slot: "rare" },
+      {
+        rarity: "illustrationRare",
+        percent: 11.11,
+        odds: "1 in 9",
+        slot: "bonus",
+      },
+      { rarity: "ultraRare", percent: 8, odds: "1 in 12.5", slot: "rare" },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 0.99,
+        odds: "1 in 101",
+        slot: "bonus",
+      },
+      {
+        rarity: "megaHyperRare",
+        percent: 0.079,
+        odds: "1 in 1,260",
+        slot: "bonus",
+      },
+    ],
+    sourceLabel: "Observed pull-rate data by set",
+    sourceUrl: pullnomicsSource,
+    rateNote:
+      "Community-observed rates, not official guarantees. The rarest-tier estimate is based on a small sample.",
+  },
+  {
+    setId: "sv10.5b",
+    name: "Black Bolt",
+    code: "BLK · EN",
+    seriesLabel: "SCARLET & VIOLET",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      { rarity: "doubleRare", percent: 20, odds: "1 in 5", slot: "rare" },
+      { rarity: "ultraRare", percent: 6.25, odds: "1 in 16", slot: "rare" },
+      {
+        rarity: "illustrationRare",
+        percent: 16.67,
+        odds: "1 in 6",
+        slot: "bonus",
+      },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.32,
+        odds: "about 1 in 76",
+        slot: "bonus",
+      },
+      {
+        rarity: "blackWhiteRare",
+        percent: 0.2,
+        odds: "about 1 in 500",
+        slot: "bonus",
+      },
+    ],
+    sourceLabel: "PokeBeach and PokéPatch opening samples",
+    sourceUrl:
+      "https://www.pokebeach.com/2025/07/black-bolt-and-white-flare-english-set-guides-full-card-lists-pull-rates-cut-cards-products-and-more",
+    rateNote:
+      "Rates are community estimates. Poké Ball and Master Ball reverse patterns use the simulator's generic reverse foil finish.",
+  },
+  {
+    setId: "sv10.5w",
+    name: "White Flare",
+    code: "WFL · EN",
+    seriesLabel: "SCARLET & VIOLET",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      { rarity: "doubleRare", percent: 20, odds: "1 in 5", slot: "rare" },
+      { rarity: "ultraRare", percent: 6.25, odds: "1 in 16", slot: "rare" },
+      {
+        rarity: "illustrationRare",
+        percent: 16.67,
+        odds: "1 in 6",
+        slot: "bonus",
+      },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.32,
+        odds: "about 1 in 76",
+        slot: "bonus",
+      },
+      {
+        rarity: "blackWhiteRare",
+        percent: 0.2,
+        odds: "about 1 in 500",
+        slot: "bonus",
+      },
+    ],
+    sourceLabel: "PokeBeach and PokéPatch opening samples",
+    sourceUrl:
+      "https://www.pokebeach.com/2025/07/black-bolt-and-white-flare-english-set-guides-full-card-lists-pull-rates-cut-cards-products-and-more",
+    rateNote:
+      "Rates are community estimates. Poké Ball and Master Ball reverse patterns use the simulator's generic reverse foil finish.",
+  },
+  {
+    setId: "sv10",
+    name: "Destined Rivals",
+    code: "DRI · EN",
+    seriesLabel: "SCARLET & VIOLET",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      {
+        rarity: "doubleRare",
+        percent: 20,
+        odds: "era estimate: 1 in 5",
+        slot: "rare",
+      },
+      {
+        rarity: "aceSpecRare",
+        percent: 5,
+        odds: "era estimate: 1 in 20",
+        slot: "rare",
+      },
+      {
+        rarity: "ultraRare",
+        percent: 6.67,
+        odds: "era estimate: 1 in 15",
+        slot: "rare",
+      },
+      {
+        rarity: "illustrationRare",
+        percent: 8.33,
+        odds: "1 in 12",
+        slot: "bonus",
+      },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.064,
+        odds: "1 in 94",
+        slot: "bonus",
+      },
+      { rarity: "hyperRare", percent: 0.671, odds: "1 in 149", slot: "bonus" },
+    ],
+    sourceLabel: "Pullnomics community data and era averages",
+    sourceUrl: pullnomicsSource,
+    rateNote:
+      "Illustration and secret-rare rates are set estimates. Double rare, Ultra rare, and ACE SPEC rates use Scarlet & Violet era averages.",
+  },
+  {
+    setId: "sv08",
+    name: "Surging Sparks",
+    code: "SSP · EN",
+    seriesLabel: "SCARLET & VIOLET",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      {
+        rarity: "doubleRare",
+        percent: 16.67,
+        odds: "era estimate: 1 in 6",
+        slot: "rare",
+      },
+      {
+        rarity: "aceSpecRare",
+        percent: 5,
+        odds: "era estimate: 1 in 20",
+        slot: "rare",
+      },
+      { rarity: "ultraRare", percent: 6.67, odds: "1 in 15", slot: "rare" },
+      {
+        rarity: "illustrationRare",
+        percent: 7.69,
+        odds: "1 in 13",
+        slot: "bonus",
+      },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.18,
+        odds: "1 in 85",
+        slot: "bonus",
+      },
+      { rarity: "hyperRare", percent: 0.529, odds: "1 in 189", slot: "bonus" },
+    ],
+    sourceLabel: "Pullnomics recorded pack-opening data",
+    sourceUrl: "https://pullnomics.com/guides/is-surging-sparks-worth-opening",
+    rateNote:
+      "Illustration and secret-rare rates are observed estimates. Double rare and ACE SPEC use Scarlet & Violet era averages.",
+  },
+  {
+    setId: "sv07",
+    name: "Stellar Crown",
+    code: "SCR · EN",
+    seriesLabel: "SCARLET & VIOLET",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      { rarity: "doubleRare", percent: 16.67, odds: "1 in 6", slot: "rare" },
+      {
+        rarity: "aceSpecRare",
+        percent: 5,
+        odds: "era estimate: 1 in 20",
+        slot: "rare",
+      },
+      { rarity: "ultraRare", percent: 6.67, odds: "1 in 15", slot: "rare" },
+      {
+        rarity: "illustrationRare",
+        percent: 7.69,
+        odds: "1 in 13",
+        slot: "bonus",
+      },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.11,
+        odds: "1 in 90",
+        slot: "bonus",
+      },
+      { rarity: "hyperRare", percent: 0.763, odds: "1 in 131", slot: "bonus" },
+    ],
+    sourceLabel: "Pullnomics community data and era averages",
+    sourceUrl: pullnomicsSource,
+    rateNote:
+      "Community-observed rates, not official guarantees. ACE SPEC uses the Scarlet & Violet era average.",
+  },
+  {
+    setId: "sv06",
+    name: "Twilight Masquerade",
+    code: "TWM · EN",
+    seriesLabel: "SCARLET & VIOLET",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      { rarity: "doubleRare", percent: 16.67, odds: "1 in 6", slot: "rare" },
+      {
+        rarity: "aceSpecRare",
+        percent: 5,
+        odds: "era estimate: 1 in 20",
+        slot: "rare",
+      },
+      { rarity: "ultraRare", percent: 6.67, odds: "1 in 15", slot: "rare" },
+      {
+        rarity: "illustrationRare",
+        percent: 7.69,
+        odds: "1 in 13",
+        slot: "bonus",
+      },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.16,
+        odds: "1 in 86",
+        slot: "bonus",
+      },
+      { rarity: "hyperRare", percent: 0.685, odds: "1 in 146", slot: "bonus" },
+    ],
+    sourceLabel: "Pullnomics community data and era averages",
+    sourceUrl: pullnomicsSource,
+    rateNote:
+      "Community-observed rates, not official guarantees. ACE SPEC uses the Scarlet & Violet era average.",
+  },
+  {
+    setId: "sv4.5",
+    name: "Paldean Fates",
+    code: "PAF · EN",
+    seriesLabel: "SCARLET & VIOLET",
+    packDescription: "10 CARDS + ENERGY · ENGLISH",
+    slots: { common: 5, uncommon: 2, reverse: 2, rare: 1 },
+    foilEnergyPercent: 0,
+    rates: [
+      { rarity: "doubleRare", percent: 15.89, odds: "1 in 6", slot: "rare" },
+      { rarity: "ultraRare", percent: 6.61, odds: "1 in 15", slot: "rare" },
+      { rarity: "shinyRare", percent: 25.44, odds: "1 in 4", slot: "bonus" },
+      {
+        rarity: "shinyUltraRare",
+        percent: 7.72,
+        odds: "1 in 13",
+        slot: "bonus",
+      },
+      {
+        rarity: "illustrationRare",
+        percent: 7.22,
+        odds: "1 in 14",
+        slot: "bonus",
+      },
+      {
+        rarity: "specialIllustrationRare",
+        percent: 1.72,
+        odds: "1 in 58",
+        slot: "bonus",
+      },
+      { rarity: "hyperRare", percent: 1.61, odds: "1 in 62", slot: "bonus" },
+    ],
+    sourceLabel: "Poké Life verified-opening data",
+    sourceUrl: "https://www.poke-life.com/sets/paldean-fates/",
+    rateNote:
+      "Community-observed rates from 1,800+ packs, checked October 2026. Pull rates are estimates, not guarantees.",
+  },
 ];
+
+const packProfilesBySetId = new Map(
+  PACK_PROFILE_DATA.map((profile) => [profile.setId, profile]),
+);
+
+export const PACK_PROFILES: PackProfile[] = packSetConfig
+  .map((set) => packProfilesBySetId.get(set.id))
+  .filter((profile): profile is PackProfile => profile !== undefined);
 
 export const DEFAULT_PACK_PROFILE = PACK_PROFILES[0]!;
 
@@ -316,13 +737,17 @@ const RARITY_GROUPS = [
   ["common", "Common"],
   ["uncommon", "Uncommon"],
   ["rare", "Rare"],
+  ["aceSpecRare", "ACE SPEC Rare"],
   ["doubleRare", "Double rare"],
   ["ultraRare", "Ultra rare"],
+  ["shinyRare", "Shiny rare"],
+  ["shinyUltraRare", "Shiny ultra rare"],
   ["illustrationRare", "Illustration rare"],
   ["specialIllustrationRare", "Special illustration rare"],
   ["hyperRare", "Hyper rare"],
   ["megaAttackRare", "Mega Attack Rare"],
   ["megaHyperRare", "Mega Hyper Rare"],
+  ["blackWhiteRare", "Black White Rare"],
   ["futureRare", "Futuristic Rare"],
 ] as const;
 
@@ -374,26 +799,36 @@ async function getRarityCards(
   cardsById: Map<string, CardSummary>,
   signal?: AbortSignal,
 ): Promise<CardSummary[]> {
-  const params = new URLSearchParams({
-    "set.id": `eq:${set.id}`,
-    rarity: `eq:${rarity}`,
-    "pagination:page": "1",
-    "pagination:itemsPerPage": "100",
-  });
-  const response = await fetch(`${TCGDEX_API}/cards?${params}`, {
-    headers: { Accept: "application/json" },
-    ...(signal ? { signal } : {}),
-  });
-  if (!response.ok) {
-    throw new Error(`TCGdex could not load the ${rarity} card pool.`);
+  const cards: CardSummary[] = [];
+  const pageSize = 100;
+
+  for (let page = 1; ; page += 1) {
+    const params = new URLSearchParams({
+      "set.id": `eq:${set.id}`,
+      rarity: `eq:${rarity}`,
+      "pagination:page": String(page),
+      "pagination:itemsPerPage": String(pageSize),
+    });
+    const response = await fetch(`${TCGDEX_API}/cards?${params}`, {
+      headers: { Accept: "application/json" },
+      ...(signal ? { signal } : {}),
+    });
+    if (!response.ok) {
+      throw new Error(`TCGdex could not load the ${rarity} card pool.`);
+    }
+    const data: unknown = await response.json();
+    if (!Array.isArray(data)) {
+      throw new Error("TCGdex returned an invalid rarity card list.");
+    }
+    cards.push(
+      ...data
+        .map((card) => toCardSummary(card, cardsById, set))
+        .filter((card): card is CardSummary => card !== null),
+    );
+    if (data.length < pageSize) break;
   }
-  const data: unknown = await response.json();
-  if (!Array.isArray(data)) {
-    throw new Error("TCGdex returned an invalid rarity card list.");
-  }
-  return data
-    .map((card) => toCardSummary(card, cardsById, set))
-    .filter((card): card is CardSummary => card !== null);
+
+  return cards;
 }
 
 export async function loadPackCatalogue(
@@ -470,15 +905,19 @@ const RARITY_ORDER: Record<PackRarity | "energy", number> = {
   common: 0,
   uncommon: 1,
   rare: 2,
+  aceSpecRare: 2.75,
   pikachu: 2.5,
   doubleRare: 3,
   classicCollection: 3.5,
   illustrationRare: 4,
   ultraRare: 5,
+  shinyRare: 5,
+  shinyUltraRare: 5.5,
   megaAttackRare: 5.5,
   specialIllustrationRare: 6,
   hyperRare: 7,
   megaHyperRare: 8,
+  blackWhiteRare: 8.5,
   futureRare: 9,
 };
 
@@ -487,15 +926,19 @@ const RARITY_LABELS: Record<PackRarity | "energy", string> = {
   common: "Common",
   uncommon: "Uncommon",
   rare: "Rare",
+  aceSpecRare: "ACE SPEC Rare",
   pikachu: "Guaranteed Pikachu",
   doubleRare: "Double Rare · ex",
   classicCollection: "Classic Collection",
   illustrationRare: "Illustration Rare",
   ultraRare: "Ultra Rare · Full Art",
+  shinyRare: "Shiny Rare",
+  shinyUltraRare: "Shiny Ultra Rare",
   megaAttackRare: "Mega Attack Rare",
   specialIllustrationRare: "Special Illustration Rare",
   hyperRare: "Hyper Rare · Gold",
   megaHyperRare: "Mega Hyper Rare · Gold",
+  blackWhiteRare: "Black White Rare",
   futureRare: "Futuristic Rare",
 };
 

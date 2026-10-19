@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { PageFrame } from "../../components/AppLayout";
 import { assetImageUrl, cardImageUrl } from "../../lib/tcgdex/api";
 import type { CardSummary } from "../../lib/tcgdex/types";
+import { useAccount } from "../account/AccountContext";
+import {
+  getPackSetAvailability,
+  recordPackReveal,
+  startPackSession,
+} from "../account/api";
 import {
   createPack,
   loadPackCatalogue,
@@ -11,33 +18,8 @@ import {
   rarityLabel,
 } from "./packData";
 import type { PackCard } from "./packData";
+import { readPackCollection, writePackCollection } from "./collectionStorage";
 import "./PackSimulatorPage.css";
-
-const PACK_COLLECTION_STORAGE_KEY = "card-atlas.pack-collection.v1";
-
-function loadPackCollection(): Record<string, string[]> {
-  try {
-    const stored = window.localStorage.getItem(PACK_COLLECTION_STORAGE_KEY);
-    if (!stored) return {};
-    const parsed: unknown = JSON.parse(stored);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      return {};
-    }
-    return Object.fromEntries(
-      Object.entries(parsed).flatMap(([setId, cardIds]) =>
-        Array.isArray(cardIds) && cardIds.every((id) => typeof id === "string")
-          ? [[setId, cardIds]]
-          : [],
-      ),
-    );
-  } catch {
-    return {};
-  }
-}
 
 function compareCardNumbers(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true });
@@ -232,10 +214,12 @@ function DealtCard({ card, index }: { card: PackCard; index: number }) {
 }
 
 export function PackSimulatorPage() {
+  const { account, isLoading: accountLoading, setAccount } = useAccount();
   const [selectedSetId, setSelectedSetId] = useState(
     DEFAULT_PACK_PROFILE.setId,
   );
   const [pack, setPack] = useState<PackCard[] | null>(null);
+  const [packSessionId, setPackSessionId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(0);
   const [decodedArtwork, setDecodedArtwork] = useState<Set<string>>(
     () => new Set(),
@@ -243,17 +227,48 @@ export function PackSimulatorPage() {
   const [currentFaceUp, setCurrentFaceUp] = useState(false);
   const [movingToBack, setMovingToBack] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [savingProgress, setSavingProgress] = useState(false);
+  const [progressError, setProgressError] = useState("");
+  const [progressMessage, setProgressMessage] = useState("");
+  const [pendingReveal, setPendingReveal] = useState<{
+    packId: string;
+    position: number;
+    card: PackCard;
+  } | null>(null);
   const [packsOpened, setPacksOpened] = useState(0);
   const [collection, setCollection] =
-    useState<Record<string, string[]>>(loadPackCollection);
+    useState<Record<string, string[]>>(readPackCollection);
   const openTimeout = useRef<number | null>(null);
   const sendTimeout = useRef<number | null>(null);
+  const progressRequestInFlight = useRef(false);
+  const setAvailabilityQuery = useQuery({
+    queryKey: ["account", "pack-set-availability"],
+    queryFn: getPackSetAvailability,
+    staleTime: 12 * 60 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    retry: false,
+  });
+  const availableSetMap = new Map(
+    (setAvailabilityQuery.data ?? []).map((set) => [set.setId, set]),
+  );
+  const selectedSetAvailability = availableSetMap.get(selectedSetId);
+  const unlockedSetIds = new Set(
+    account?.progression.unlockedSets.map((set) => set.setId) ?? [
+      DEFAULT_PACK_PROFILE.setId,
+    ],
+  );
+  const isSelectedSetUnlocked = unlockedSetIds.has(selectedSetId);
   const profile =
     PACK_PROFILES.find((candidate) => candidate.setId === selectedSetId) ??
     DEFAULT_PACK_PROFILE;
   const catalogueQuery = useQuery({
     queryKey: ["pack-simulator", selectedSetId, "en"],
     queryFn: ({ signal }) => loadPackCatalogue(selectedSetId, signal),
+    enabled:
+      !accountLoading &&
+      isSelectedSetUnlocked &&
+      (selectedSetId === DEFAULT_PACK_PROFILE.setId ||
+        selectedSetAvailability?.available === true),
     staleTime: 24 * 60 * 60 * 1000,
     gcTime: 24 * 60 * 60 * 1000,
     retry: false,
@@ -268,7 +283,29 @@ export function PackSimulatorPage() {
         ),
       ].sort((left, right) => compareCardNumbers(left.localId, right.localId))
     : [];
-  const collectedIds = new Set(collection[selectedSetId] ?? []);
+  const collectedIds = new Set([
+    ...(collection[selectedSetId] ?? []),
+    ...(account?.progression.collections[selectedSetId] ?? []),
+  ]);
+  const allCardArtworkPresent =
+    collectionCards.length > 0 &&
+    collectionCards.every(
+      (card) =>
+        typeof card.image === "string" &&
+        card.image.startsWith("https://assets.tcgdex.net/"),
+    );
+  const selectedSetAvailable =
+    selectedSetAvailability?.available ?? allCardArtworkPresent;
+  const canOpenSelectedSet =
+    !accountLoading &&
+    isSelectedSetUnlocked &&
+    selectedSetAvailable &&
+    allCardArtworkPresent;
+  const eligibleProfiles = PACK_PROFILES.filter((candidate) =>
+    setAvailabilityQuery.data
+      ? availableSetMap.get(candidate.setId)?.available === true
+      : candidate.setId === DEFAULT_PACK_PROFILE.setId,
+  );
   const setLogo = assetImageUrl(catalogue?.set.logo ?? null);
   const allRevealed = pack !== null && revealed >= pack.length;
   const currentCard = pack && !allRevealed ? pack[revealed] : null;
@@ -289,22 +326,79 @@ export function PackSimulatorPage() {
   );
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        PACK_COLLECTION_STORAGE_KEY,
-        JSON.stringify(collection),
-      );
-    } catch {
-      // The simulator remains usable when browser storage is unavailable.
-    }
+    writePackCollection(collection);
   }, [collection]);
 
-  function openPack() {
-    if (!catalogue) return;
+  useEffect(() => {
+    if (!account) return;
+    setCollection((previous) => {
+      let changed = false;
+      const merged = { ...previous };
+      for (const [setId, cardIds] of Object.entries(
+        account.progression.collections,
+      )) {
+        const existing = new Set(merged[setId] ?? []);
+        for (const cardId of cardIds) {
+          if (!existing.has(cardId)) {
+            existing.add(cardId);
+            changed = true;
+          }
+        }
+        merged[setId] = [...existing];
+      }
+      return changed ? merged : previous;
+    });
+  }, [account?.progression.collections]);
+
+  useEffect(() => {
+    if (accountLoading) return;
+    const unavailable =
+      setAvailabilityQuery.data !== undefined &&
+      selectedSetId !== DEFAULT_PACK_PROFILE.setId &&
+      selectedSetAvailability?.available !== true;
+    if (!isSelectedSetUnlocked || unavailable) {
+      selectSet(DEFAULT_PACK_PROFILE.setId);
+    }
+  }, [
+    accountLoading,
+    isSelectedSetUnlocked,
+    selectedSetAvailability?.available,
+    selectedSetId,
+    setAvailabilityQuery.data,
+  ]);
+
+  async function openPack() {
+    if (!catalogue || !canOpenSelectedSet || opening || savingProgress) return;
     if (openTimeout.current !== null) window.clearTimeout(openTimeout.current);
     if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
     const nextPack = createPack(catalogue);
+    setOpening(true);
+    setProgressError("");
+    setProgressMessage("");
+    setPendingReveal(null);
+    let nextSessionId: string | null = null;
+    if (account) {
+      try {
+        const session = await startPackSession(selectedSetId, nextPack.length);
+        nextSessionId = session.packId;
+        setAccount(session.account);
+        if (session.dailyReward.claimed) {
+          setProgressMessage(
+            `Daily streak · +${session.dailyReward.xp} XP · day ${session.dailyReward.streakDays}`,
+          );
+        }
+      } catch (error) {
+        setOpening(false);
+        setProgressError(
+          error instanceof Error
+            ? error.message
+            : "Could not start this pack session.",
+        );
+        return;
+      }
+    }
     setPack(nextPack);
+    setPackSessionId(nextSessionId);
     setDecodedArtwork(new Set());
     const artworkUrls = new Set(
       nextPack
@@ -333,8 +427,50 @@ export function PackSimulatorPage() {
     );
   }
 
-  function advanceCard() {
-    if (!pack || opening || movingToBack || allRevealed) return;
+  async function saveReveal(
+    packId: string,
+    position: number,
+    card: PackCard,
+  ): Promise<boolean> {
+    if (progressRequestInFlight.current) return false;
+    progressRequestInFlight.current = true;
+    setSavingProgress(true);
+    setProgressError("");
+    try {
+      const result = await recordPackReveal({
+        packId,
+        position,
+        cardId: card.id,
+        rarity: card.rarity,
+        finish: card.finish,
+      });
+      setAccount(result.account);
+      setPendingReveal(null);
+      setProgressMessage(
+        result.rewards.length > 0
+          ? result.rewards
+              .map((reward) => `+${reward.xp} XP ${reward.label}`)
+              .join(" · ")
+          : "Card reveal saved · duplicate cards do not add XP",
+      );
+      return true;
+    } catch (error) {
+      setPendingReveal({ packId, position, card });
+      setProgressError(
+        error instanceof Error
+          ? `${error.message} Click the card again to retry saving this reveal.`
+          : "Could not save this reveal. Click the card again to retry.",
+      );
+      return false;
+    } finally {
+      progressRequestInFlight.current = false;
+      setSavingProgress(false);
+    }
+  }
+
+  async function advanceCard() {
+    if (!pack || opening || movingToBack || savingProgress || allRevealed)
+      return;
     if (!currentFaceUp) {
       if (currentCard && currentCard.rarity !== "energy") {
         setCollection((previous) => {
@@ -347,7 +483,19 @@ export function PackSimulatorPage() {
         });
       }
       setCurrentFaceUp(true);
+      if (account && packSessionId && currentCard) {
+        await saveReveal(packSessionId, revealed, currentCard);
+      }
       return;
+    }
+
+    if (pendingReveal) {
+      const saved = await saveReveal(
+        pendingReveal.packId,
+        pendingReveal.position,
+        pendingReveal.card,
+      );
+      if (!saved) return;
     }
 
     setMovingToBack(true);
@@ -366,11 +514,15 @@ export function PackSimulatorPage() {
     if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
     setSelectedSetId(setId);
     setPack(null);
+    setPackSessionId(null);
     setRevealed(0);
     setDecodedArtwork(new Set());
     setCurrentFaceUp(false);
     setMovingToBack(false);
     setOpening(false);
+    setProgressError("");
+    setProgressMessage("");
+    setPendingReveal(null);
   }
 
   return (
@@ -384,9 +536,31 @@ export function PackSimulatorPage() {
             a time, with the biggest pull saved for last.
           </p>
         </div>
-        <div className="pack-page-heading__badge">
-          <span>PACK PROFILE</span>
-          <strong>{profile.code}</strong>
+        <div className="pack-page-heading__aside">
+          {account ? (
+            <Link
+              className="pack-page-heading__xp"
+              to="/account"
+              aria-label={`${account.progression.xp} XP. Open account settings.`}
+            >
+              <span>YOUR XP</span>
+              <strong>
+                {account.progression.xp.toLocaleString()} <small>XP</small>
+              </strong>
+            </Link>
+          ) : (
+            <Link
+              className="pack-page-heading__xp pack-page-heading__xp--guest"
+              to="/account"
+            >
+              <span>PROGRESSION</span>
+              <strong>Sign in to earn XP</strong>
+            </Link>
+          )}
+          <div className="pack-page-heading__badge">
+            <span>PACK PROFILE</span>
+            <strong>{profile.code}</strong>
+          </div>
         </div>
       </header>
 
@@ -417,7 +591,12 @@ export function PackSimulatorPage() {
                 faceUp={currentFaceUp}
                 movingToBack={movingToBack}
                 imageReady={currentArtworkReady}
-                disabled={opening || movingToBack || !currentArtworkReady}
+                disabled={
+                  opening ||
+                  movingToBack ||
+                  savingProgress ||
+                  !currentArtworkReady
+                }
                 onClick={advanceCard}
               />
             )}
@@ -445,13 +624,35 @@ export function PackSimulatorPage() {
             <span>Choose a set</span>
             <select
               value={selectedSetId}
+              disabled={opening}
               onChange={(event) => selectSet(event.target.value)}
             >
-              {PACK_PROFILES.map((option) => (
-                <option key={option.setId} value={option.setId}>
-                  {option.name}
+              {eligibleProfiles.length === 0 ? (
+                <option value={selectedSetId}>
+                  {setAvailabilityQuery.isPending
+                    ? "Checking set artwork…"
+                    : "No eligible sets available"}
                 </option>
-              ))}
+              ) : (
+                eligibleProfiles.map((option) => {
+                  const unlocked = unlockedSetIds.has(option.setId);
+                  const availability = availableSetMap.get(option.setId);
+                  return (
+                    <option
+                      key={option.setId}
+                      value={option.setId}
+                      disabled={!unlocked}
+                    >
+                      {option.name}
+                      {!unlocked
+                        ? account
+                          ? ` · ${availability?.xpCost ?? 0} XP to unlock`
+                          : " · sign in to unlock"
+                        : ""}
+                    </option>
+                  );
+                })
+              )}
             </select>
           </label>
           <h2>{catalogue?.set.name ?? profile.name}</h2>
@@ -462,6 +663,51 @@ export function PackSimulatorPage() {
                 : `${catalogue.set.totalCards ?? catalogue.set.cards.length} cards in the set · observed pull rates`
               : "Loading the card list and rarity pools from TCGdex…"}
           </p>
+
+          {account ? (
+            <div className="pack-progression-summary">
+              <span>
+                <strong>{account.progression.streakDays}</strong> day streak
+              </span>
+              <Link to="/account">Manage account and unlocks</Link>
+            </div>
+          ) : (
+            <p className="pack-account-prompt">
+              Open the starter set as a guest, or{" "}
+              <Link to="/account">create an account</Link> to earn XP and unlock
+              more sets.
+            </p>
+          )}
+
+          {progressError && (
+            <div className="pack-error" role="alert">
+              <p>{progressError}</p>
+            </div>
+          )}
+          {progressMessage && (
+            <p className="pack-progress-message" role="status">
+              {progressMessage}
+            </p>
+          )}
+
+          {setAvailabilityQuery.isError &&
+            selectedSetId !== DEFAULT_PACK_PROFILE.setId && (
+              <div className="pack-error" role="alert">
+                <p>
+                  Set artwork availability could not be verified. Return to the
+                  starter set or try reloading.
+                </p>
+              </div>
+            )}
+          {setAvailabilityQuery.data &&
+            selectedSetAvailability?.available === false && (
+              <div className="pack-error" role="alert">
+                <p>
+                  This set is hidden because one or more cards do not have
+                  TCGdex artwork.
+                </p>
+              </div>
+            )}
 
           {catalogueQuery.isError && (
             <div className="pack-error" role="alert">
@@ -492,27 +738,40 @@ export function PackSimulatorPage() {
               <button
                 className="pack-button"
                 type="button"
-                disabled={!catalogue}
-                onClick={openPack}
+                disabled={!canOpenSelectedSet || opening || savingProgress}
+                onClick={() => void openPack()}
               >
-                {allRevealed ? "Open another pack" : "Tear open pack"}
+                {opening
+                  ? "Opening pack…"
+                  : allRevealed
+                    ? "Open another pack"
+                    : "Tear open pack"}
               </button>
             ) : (
               <button
                 className="pack-button"
                 type="button"
-                disabled={opening || movingToBack || !currentArtworkReady}
-                onClick={advanceCard}
+                disabled={
+                  opening ||
+                  movingToBack ||
+                  savingProgress ||
+                  !currentArtworkReady
+                }
+                onClick={() => void advanceCard()}
               >
                 {opening
                   ? "Dealing cards…"
                   : movingToBack
                     ? "Moving card to the back…"
-                    : !currentArtworkReady
-                      ? "Preparing card artwork…"
-                      : currentFaceUp
-                        ? `Move card to the back · ${revealed + 1} of ${pack.length}`
-                        : `Turn over card · ${revealed + 1} of ${pack.length}`}
+                    : savingProgress
+                      ? "Saving progress…"
+                      : !currentArtworkReady
+                        ? "Preparing card artwork…"
+                        : currentFaceUp
+                          ? pendingReveal
+                            ? "Retry save and move card"
+                            : `Move card to the back · ${revealed + 1} of ${pack.length}`
+                          : `Turn over card · ${revealed + 1} of ${pack.length}`}
               </button>
             )}
             <span className="pack-simulator__session">
