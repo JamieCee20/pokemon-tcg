@@ -894,6 +894,166 @@
   font-size: 10px;
 }
 
+.pack-collection {
+  margin: 20px 0 36px;
+  padding: clamp(15px, 2vw, 22px);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(255 255 255 / 4%), transparent 65%),
+    rgb(255 255 255 / 2%);
+}
+
+.pack-collection__heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.pack-collection__heading .eyebrow {
+  margin: 0 0 5px;
+  color: var(--color-gold-bright);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.pack-collection__heading h2 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: clamp(17px, 2vw, 22px);
+}
+
+.pack-collection__heading p:last-child {
+  margin: 5px 0 0;
+  color: var(--color-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.pack-collection__count {
+  flex: 0 0 auto;
+  color: var(--color-gold-bright);
+  font-size: 19px;
+  white-space: nowrap;
+}
+
+.pack-collection__count span {
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pack-collection__progress {
+  height: 6px;
+  overflow: hidden;
+  margin-bottom: 17px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 9%);
+}
+
+.pack-collection__progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #b38b4d, #f3d18c);
+  transition: width 280ms ease;
+}
+
+.pack-collection__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(98px, 1fr));
+  gap: 12px 10px;
+}
+
+.pack-collection-card {
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid rgb(226 226 210 / 12%);
+  border-radius: 9px;
+  background: rgb(0 0 0 / 13%);
+}
+
+.pack-collection-card.is-collected {
+  border-color: rgb(243 209 140 / 43%);
+  box-shadow: 0 0 13px rgb(225 183 102 / 9%);
+}
+
+.pack-collection-card__artwork {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 0.69;
+  border-radius: 5px;
+  background: linear-gradient(145deg, #273039, #151a20);
+}
+
+.pack-collection-card__artwork > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition:
+    filter 180ms ease,
+    transform 180ms ease;
+}
+
+.pack-collection-card.is-locked .pack-collection-card__artwork > img {
+  filter: grayscale(1) brightness(0.48);
+}
+
+.pack-collection-card.is-collected .pack-collection-card__artwork > img {
+  filter: drop-shadow(0 0 5px rgb(255 229 171 / 25%));
+}
+
+.pack-collection-card__artwork
+  > span:first-child:not(.pack-collection-card__lock) {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.pack-collection-card__lock {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  padding: 4px 3px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 4px;
+  background: rgb(10 13 17 / 78%);
+  color: rgb(255 255 255 / 77%);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.pack-collection-card > strong,
+.pack-collection-card > small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pack-collection-card > strong {
+  margin-top: 6px;
+  color: var(--color-text);
+  font-size: 9px;
+}
+
+.pack-collection-card > small {
+  margin-top: 3px;
+  color: var(--color-muted);
+  font-size: 8px;
+}
+
 @keyframes pack-rattle {
   0%,
   100% {
