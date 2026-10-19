@@ -15,6 +15,7 @@ import {
 } from "react-router-dom";
 import { useLanguage } from "../lib/tcgdex/useLanguage";
 import { isTcgLanguage, type TcgLanguage } from "../lib/tcgdex/languages";
+import { useAccount } from "../features/account/AccountContext";
 
 function SearchGlyph() {
   return (
@@ -30,6 +31,7 @@ export function AppLayout() {
   const location = useLocation();
   const [params] = useSearchParams();
   const { language, setLanguage } = useLanguage();
+  const { account } = useAccount();
   const currentQuery = new URLSearchParams(location.search).get("q") ?? "";
   const routeLanguage = params.get("lang");
 
@@ -88,6 +90,16 @@ export function AppLayout() {
             >
               Account
             </NavLink>
+            {account?.user.role === "admin" && (
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  isActive ? "main-nav__link is-active" : "main-nav__link"
+                }
+              >
+                Admin
+              </NavLink>
+            )}
           </nav>
           <HeaderSearch
             key={`${location.pathname}${location.search}`}

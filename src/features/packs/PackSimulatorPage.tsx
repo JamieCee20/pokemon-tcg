@@ -244,7 +244,7 @@ export function PackSimulatorPage() {
   const setAvailabilityQuery = useQuery({
     queryKey: ["account", "pack-set-availability"],
     queryFn: getPackSetAvailability,
-    staleTime: 12 * 60 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
     gcTime: 24 * 60 * 60 * 1000,
     retry: false,
   });
@@ -268,7 +268,7 @@ export function PackSimulatorPage() {
       !accountLoading &&
       isSelectedSetUnlocked &&
       (selectedSetId === DEFAULT_PACK_PROFILE.setId ||
-        selectedSetAvailability?.available === true),
+        selectedSetAvailability?.available !== false),
     staleTime: 24 * 60 * 60 * 1000,
     gcTime: 24 * 60 * 60 * 1000,
     retry: false,
@@ -303,8 +303,12 @@ export function PackSimulatorPage() {
     allCardArtworkPresent;
   const eligibleProfiles = PACK_PROFILES.filter((candidate) =>
     setAvailabilityQuery.data
-      ? availableSetMap.get(candidate.setId)?.available === true
+      ? availableSetMap.get(candidate.setId)?.available !== false
       : candidate.setId === DEFAULT_PACK_PROFILE.setId,
+  ).sort(
+    (left, right) =>
+      (availableSetMap.get(left.setId)?.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+      (availableSetMap.get(right.setId)?.sortOrder ?? Number.MAX_SAFE_INTEGER),
   );
   const setLogo = assetImageUrl(catalogue?.set.logo ?? null);
   const allRevealed = pack !== null && revealed >= pack.length;
@@ -706,6 +710,22 @@ export function PackSimulatorPage() {
                   This set is hidden because one or more cards do not have
                   TCGdex artwork.
                 </p>
+              </div>
+            )}
+          {setAvailabilityQuery.data &&
+            selectedSetAvailability?.available === null && (
+              <div className="pack-error" role="alert">
+                <p>
+                  TCGdex could not verify this set just now. Its artwork has
+                  not been marked missing; try checking again.
+                </p>
+                <button
+                  className="pack-button pack-button--secondary"
+                  type="button"
+                  onClick={() => void setAvailabilityQuery.refetch()}
+                >
+                  Retry artwork check
+                </button>
               </div>
             )}
 

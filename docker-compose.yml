@@ -57,6 +57,7 @@ services:
     restart: unless-stopped
     environment:
       ACCOUNT_DB_FILE: /data/account-progress.sqlite
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-jamiecee20.1999@gmail.com}
     volumes:
       - account-progress:/data
     expose:

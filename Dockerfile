@@ -23,6 +23,7 @@ FROM node:24-alpine AS progress-api
 
 WORKDIR /app
 COPY server/progress-api.mjs ./server/progress-api.mjs
+COPY server/promote-admin.mjs ./server/promote-admin.mjs
 COPY config/pack-sets.json ./config/pack-sets.json
 RUN mkdir -p /data && chown node:node /data
 ENV NODE_ENV=production

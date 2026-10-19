@@ -78,6 +78,7 @@ export function AccountPage() {
   const [message, setMessage] = useState("");
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [registrationPending, setRegistrationPending] = useState(false);
   const [profileName, setProfileName] = useState(account?.user.firstName ?? "");
   const [profileAvatar, setProfileAvatar] = useState<AccountAvatar | null>(
     account?.user.avatar ?? null,
@@ -88,7 +89,7 @@ export function AccountPage() {
   const setsQuery = useQuery({
     queryKey: ["account", "pack-set-availability"],
     queryFn: getPackSetAvailability,
-    staleTime: 12 * 60 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
     gcTime: 24 * 60 * 60 * 1000,
     retry: false,
   });
@@ -121,19 +122,28 @@ export function AccountPage() {
     setFormError("");
     setMessage("");
     try {
-      const result =
-        mode === "register"
-          ? await registerAccount({ email, password, firstName, avatar })
-          : await loginAccount({ email, password });
+      if (mode === "register") {
+        const website = new FormData(event.currentTarget).get("website");
+        await registerAccount({
+          email,
+          password,
+          firstName,
+          avatar,
+          website: typeof website === "string" ? website : "",
+        });
+        setRegistrationPending(true);
+        setPassword("");
+        setMessage(
+          "New accounts require administrator approval before sign-in. If you already have an account, return to sign in.",
+        );
+        return;
+      }
+      const result = await loginAccount({ email, password });
       setAccount(result);
       setProfileName(result.user.firstName);
       setProfileAvatar(result.user.avatar);
       setPassword("");
-      setMessage(
-        mode === "register"
-          ? "Account created. Your first set is unlocked."
-          : "You are signed in.",
-      );
+      setMessage("You are signed in.");
     } catch (error) {
       setFormError(
         error instanceof Error ? error.message : "Could not sign in right now.",
@@ -363,6 +373,18 @@ export function AccountPage() {
             </form>
           </section>
 
+          {account.user.role === "admin" && (
+            <section className="account-panel account-admin-shortcut">
+              <div>
+                <p className="eyebrow">ADMINISTRATION</p>
+                <h2>Manage players and progression</h2>
+              </div>
+              <Link className="pack-button pack-button--secondary" to="/admin">
+                Open admin panel
+              </Link>
+            </section>
+          )}
+
           {localCount > 0 && (
             <section className="account-panel account-import">
               <div>
@@ -510,6 +532,26 @@ export function AccountPage() {
             </button>
           </div>
         </div>
+      ) : registrationPending ? (
+        <section className="account-panel account-auth-panel">
+          <p className="eyebrow">REGISTRATION SUBMITTED</p>
+          <h2>Awaiting approval</h2>
+          <p>
+            New accounts are held until an administrator approves them. If you
+            already have an account, return here and sign in.
+          </p>
+          <button
+            className="account-text-button"
+            type="button"
+            onClick={() => {
+              setRegistrationPending(false);
+              setMode("login");
+              setMessage("");
+            }}
+          >
+            Return to sign in
+          </button>
+        </section>
       ) : (
         <section className="account-panel account-auth-panel">
           <div className="account-section-heading">
@@ -537,6 +579,17 @@ export function AccountPage() {
             </div>
           </div>
           <form className="account-form" onSubmit={submitAuth}>
+            {mode === "register" && (
+              <label className="account-honeypot" aria-hidden="true">
+                Leave this field empty
+                <input
+                  autoComplete="off"
+                  name="website"
+                  tabIndex={-1}
+                  type="text"
+                />
+              </label>
+            )}
             <label>
               Email
               <input
@@ -590,8 +643,8 @@ export function AccountPage() {
             </button>
           </form>
           <p className="account-muted">
-            Email verification and password recovery are not configured. Your
-            account starts with the first available set unlocked.
+            New accounts must verify their email and wait for administrator
+            approval. Password recovery by email is not configured yet.
           </p>
         </section>
       )}

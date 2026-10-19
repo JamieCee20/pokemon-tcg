@@ -1465,6 +1465,22 @@
   font-size: 13px;
 }
 
+@media (min-width: 851px) and (max-width: 1150px) {
+  .site-header__inner {
+    grid-template-columns: auto 1fr minmax(170px, 200px);
+    gap: 15px;
+  }
+  .main-nav {
+    gap: clamp(10px, 1.4vw, 17px);
+  }
+  .main-nav__link {
+    font-size: 12px;
+  }
+  .header-search {
+    width: min(200px, 100%);
+  }
+}
+
 @media (max-width: 850px) {
   .site-header__inner {
     width: min(100% - 40px, 720px);

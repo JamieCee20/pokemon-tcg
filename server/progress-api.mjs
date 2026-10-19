@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, scrypt, timingSafeEqual, createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
+import { isIP } from "node:net";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 import packSetConfig from "../config/pack-sets.json" with { type: "json" };
@@ -51,8 +52,8 @@ const FULL_ART_RARITIES = new Set([
   "shinyUltraRare",
   "blackWhiteRare",
 ]);
-const PACK_SETS = packSetConfig;
-const STARTER_SET_ID = PACK_SETS[0].id;
+const PACK_SET_DEFINITIONS = packSetConfig;
+let PACK_SETS = PACK_SET_DEFINITIONS;
 const setAvailabilityCache = new Map();
 const authAttempts = new Map();
 const authWindowMs = 15 * 60 * 1000;
@@ -74,7 +75,9 @@ database.exec(`
     password_hash TEXT NOT NULL,
     first_name TEXT NOT NULL,
     avatar TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'admin')),
+    account_status TEXT NOT NULL DEFAULT 'active' CHECK(account_status IN ('pending_approval', 'active', 'suspended'))
   ) STRICT;
 
   CREATE TABLE IF NOT EXISTS account_migrations (
@@ -144,7 +147,78 @@ database.exec(`
     created_at TEXT NOT NULL,
     PRIMARY KEY(pack_id, position)
   ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS pack_set_settings (
+    set_id TEXT PRIMARY KEY,
+    xp_cost INTEGER NOT NULL CHECK(xp_cost BETWEEN 0 AND 1000000),
+    sort_order INTEGER NOT NULL
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id TEXT PRIMARY KEY,
+    admin_user_id TEXT NOT NULL REFERENCES users(id),
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    details_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  ) STRICT;
+
+  CREATE INDEX IF NOT EXISTS admin_audit_created_idx
+    ON admin_audit_log(created_at DESC);
 `);
+
+function ensureColumn(tableName, columnName, definition) {
+  const columns = database.prepare(`PRAGMA table_info(${tableName})`).all();
+  if (!columns.some((column) => column.name === columnName)) {
+    database.exec(
+      `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`,
+    );
+  }
+}
+
+ensureColumn("users", "role", "TEXT NOT NULL DEFAULT 'user'");
+ensureColumn("users", "account_status", "TEXT NOT NULL DEFAULT 'active'");
+database
+  .prepare(
+    "UPDATE users SET account_status = 'pending_approval' WHERE account_status = 'pending_email'",
+  )
+  .run();
+
+const seedPackSetSetting = database.prepare(
+  "INSERT OR IGNORE INTO pack_set_settings (set_id, xp_cost, sort_order) VALUES (?, ?, ?)",
+);
+PACK_SET_DEFINITIONS.forEach((set, index) => {
+  const settingExists = database
+    .prepare("SELECT 1 FROM pack_set_settings WHERE set_id = ?")
+    .get(set.id);
+  if (settingExists) return;
+  const currentCount =
+    database.prepare("SELECT COUNT(*) AS count FROM pack_set_settings").get()
+      ?.count ?? 0;
+  const highestOrder = database
+    .prepare("SELECT MAX(sort_order) AS highest FROM pack_set_settings")
+    .get()?.highest;
+  const nextOrder =
+    currentCount === 0 ? (index + 1) * 100 : (highestOrder ?? 0) + 100;
+  seedPackSetSetting.run(set.id, set.xpCost, nextOrder);
+});
+
+function getConfiguredPackSets() {
+  const settings = new Map(
+    database
+      .prepare("SELECT set_id, xp_cost, sort_order FROM pack_set_settings")
+      .all()
+      .map((row) => [row.set_id, row]),
+  );
+  return PACK_SET_DEFINITIONS.map((set, index) => ({
+    ...set,
+    xpCost: settings.get(set.id)?.xp_cost ?? set.xpCost,
+    sortOrder: settings.get(set.id)?.sort_order ?? (index + 1) * 100,
+  })).sort((left, right) => left.sortOrder - right.sortOrder);
+}
+
+PACK_SETS = getConfiguredPackSets();
 
 const PROGRESSION_ORDER_RESET_ID = "2026-10-pack-order-xp-reset-v1";
 if (
@@ -163,7 +237,7 @@ if (
       "INSERT INTO user_unlocks (user_id, set_id, unlocked_at) VALUES (?, ?, ?)",
     );
     for (const user of database.prepare("SELECT id FROM users").all()) {
-      addStarterUnlock.run(user.id, STARTER_SET_ID, migratedAt);
+      addStarterUnlock.run(user.id, PACK_SETS[0].id, migratedAt);
     }
     database
       .prepare(
@@ -183,7 +257,7 @@ const statement = {
   ),
   findUserById: database.prepare("SELECT * FROM users WHERE id = ?"),
   insertUser: database.prepare(
-    "INSERT INTO users (id, email, password_salt, password_hash, first_name, avatar, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO users (id, email, password_salt, password_hash, first_name, avatar, created_at, role, account_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ),
   insertProgress: database.prepare(
     "INSERT INTO user_progress (user_id, updated_at) VALUES (?, ?)",
@@ -378,7 +452,7 @@ function checkSameOrigin(request) {
   }
 }
 
-function enforceRateLimit(key) {
+function enforceRateLimit(key, limit = authAttemptLimit) {
   const now = Date.now();
   const recent = (authAttempts.get(key) ?? []).filter(
     (timestamp) => now - timestamp < authWindowMs,
@@ -392,7 +466,7 @@ function enforceRateLimit(key) {
       }
     }
   }
-  if (recent.length > authAttemptLimit) {
+  if (recent.length > limit) {
     const error = new Error(
       "Too many sign-in attempts. Please try again later.",
     );
@@ -400,6 +474,29 @@ function enforceRateLimit(key) {
     error.code = "auth_rate_limited";
     throw error;
   }
+}
+
+function requestIp(request) {
+  const forwarded = request.headers["x-real-ip"];
+  const candidate = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const address = typeof candidate === "string" ? candidate.trim() : "";
+  return isIP(address) ? address : (request.socket.remoteAddress ?? "unknown");
+}
+
+function recordAdminAction(admin, action, targetType, targetId, details) {
+  database
+    .prepare(
+      "INSERT INTO admin_audit_log (id, admin_user_id, action, target_type, target_id, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .run(
+      ulid(),
+      admin.id,
+      action,
+      targetType,
+      targetId,
+      JSON.stringify(details),
+      new Date().toISOString(),
+    );
 }
 
 async function hashPassword(password, salt = randomBytes(16)) {
@@ -442,6 +539,8 @@ function snapshot(user) {
       email: user.email,
       firstName: user.first_name,
       avatar: user.avatar,
+      role: user.role,
+      accountStatus: user.account_status,
     },
     progression: {
       xp: progress?.xp ?? 0,
@@ -526,12 +625,18 @@ async function fetchSetMetadata(setId) {
 }
 
 async function getSetAvailability() {
+  PACK_SETS = getConfiguredPackSets();
   const now = Date.now();
-  const stale = [...setAvailabilityCache.values()].every(
-    (entry) => now - entry.checkedAt >= SET_AVAILABILITY_TTL_MS,
-  );
-  if (setAvailabilityCache.size === PACK_SETS.length && !stale) {
-    return PACK_SETS.map((set) => setAvailabilityCache.get(set.id).result);
+  const allFresh = PACK_SETS.every((set) => {
+    const entry = setAvailabilityCache.get(set.id);
+    return entry && now - entry.checkedAt < SET_AVAILABILITY_TTL_MS;
+  });
+  if (allFresh) {
+    return PACK_SETS.map((set) => ({
+      ...setAvailabilityCache.get(set.id).result,
+      xpCost: set.xpCost,
+      sortOrder: set.sortOrder,
+    }));
   }
   const concurrency = 4;
   for (let offset = 0; offset < PACK_SETS.length; offset += concurrency) {
@@ -571,26 +676,29 @@ async function getSetAvailability() {
             result: {
               setId: set.id,
               name: set.name,
-              xpCost: set.xpCost,
               available,
             },
           });
         } catch {
+          const previous = setAvailabilityCache.get(set.id);
           setAvailabilityCache.set(set.id, {
             checkedAt: now - SET_AVAILABILITY_TTL_MS + 60_000,
-            cardIds: new Set(),
-            result: {
+            cardIds: previous?.cardIds ?? new Set(),
+            result: previous?.result ?? {
               setId: set.id,
               name: set.name,
-              xpCost: set.xpCost,
-              available: false,
+              available: null,
             },
           });
         }
       }),
     );
   }
-  return PACK_SETS.map((set) => setAvailabilityCache.get(set.id).result);
+  return PACK_SETS.map((set) => ({
+    ...setAvailabilityCache.get(set.id).result,
+    xpCost: set.xpCost,
+    sortOrder: set.sortOrder,
+  }));
 }
 
 function isValidEmail(email) {
@@ -616,7 +724,11 @@ function validateProfile(firstName, avatar) {
 }
 
 function availableSet(setId, availability) {
-  return availability.find((set) => set.setId === setId && set.available);
+  return availability.find((set) => set.setId === setId && set.available === true);
+}
+
+function setAvailabilityFor(setId, availability) {
+  return availability.find((set) => set.setId === setId);
 }
 
 function validCardId(setId, cardId) {
@@ -640,7 +752,7 @@ function transaction(callback) {
 
 function requireAuthenticated(request, response) {
   const user = getCurrentUser(request);
-  if (!user) {
+  if (!user || user.account_status !== "active") {
     sendError(
       response,
       401,
@@ -650,6 +762,77 @@ function requireAuthenticated(request, response) {
     return null;
   }
   return user;
+}
+
+function requireAdmin(request, response) {
+  const user = requireAuthenticated(request, response);
+  if (!user) return null;
+  if (user.role !== "admin") {
+    sendError(
+      response,
+      403,
+      "Administrator access is required.",
+      "admin_required",
+    );
+    return null;
+  }
+  return user;
+}
+
+function getAdminUserRows() {
+  return database
+    .prepare(
+      `SELECT users.id, users.email, users.first_name, users.avatar, users.role,
+              users.account_status, users.created_at,
+              COALESCE(user_progress.xp, 0) AS xp,
+              COALESCE(user_progress.streak_days, 0) AS streak_days,
+              (SELECT COUNT(*) FROM user_unlocks WHERE user_unlocks.user_id = users.id) AS unlocked_sets,
+              (SELECT COUNT(*) FROM user_collection WHERE user_collection.user_id = users.id) AS collected_cards
+       FROM users
+       LEFT JOIN user_progress ON user_progress.user_id = users.id
+       ORDER BY users.created_at DESC
+       LIMIT 500`,
+    )
+    .all()
+    .map((user) => ({
+      id: user.id,
+      email: user.email,
+      firstName: user.first_name,
+      avatar: user.avatar,
+      role: user.role,
+      status: user.account_status,
+      createdAt: user.created_at,
+      xp: user.xp,
+      streakDays: user.streak_days,
+      unlockedSets: user.unlocked_sets,
+      collectedCards: user.collected_cards,
+    }));
+}
+
+function getAdminOverview() {
+  const counts = database
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN account_status = 'pending_approval' THEN 1 ELSE 0 END) AS pending_approval,
+              SUM(CASE WHEN account_status = 'active' THEN 1 ELSE 0 END) AS active,
+              SUM(CASE WHEN account_status = 'suspended' THEN 1 ELSE 0 END) AS suspended
+       FROM users`,
+    )
+    .get();
+  return { users: counts };
+}
+
+function getAdminSetRows() {
+  const availability = new Map(
+    PACK_SETS.map((set) => [set.id, setAvailabilityCache.get(set.id)?.result]),
+  );
+  return PACK_SETS.map((set) => ({
+    setId: set.id,
+    name: set.name,
+    xpCost: set.xpCost,
+    sortOrder: set.sortOrder,
+    available: availability.get(set.id)?.available ?? false,
+  }));
 }
 
 function apiError(message, status, code) {
@@ -694,13 +877,266 @@ const server = createServer(async (request, response) => {
   }
 
   try {
+    if (path.startsWith("/api/account/admin/")) {
+      const admin = requireAdmin(request, response);
+      if (!admin) return;
+
+      if (request.method === "GET" && path === "/api/account/admin/overview") {
+        sendJson(response, 200, { overview: getAdminOverview() });
+        return;
+      }
+      if (request.method === "GET" && path === "/api/account/admin/users") {
+        sendJson(response, 200, { users: getAdminUserRows() });
+        return;
+      }
+      if (request.method === "GET" && path === "/api/account/admin/sets") {
+        await getSetAvailability();
+        sendJson(response, 200, { sets: getAdminSetRows() });
+        return;
+      }
+      if (request.method === "GET" && path === "/api/account/admin/audit") {
+        const entries = database
+          .prepare(
+            `SELECT admin_audit_log.id, admin_audit_log.action,
+                    admin_audit_log.target_type, admin_audit_log.target_id,
+                    admin_audit_log.details_json, admin_audit_log.created_at,
+                    users.email AS admin_email
+             FROM admin_audit_log
+             JOIN users ON users.id = admin_audit_log.admin_user_id
+             ORDER BY admin_audit_log.created_at DESC
+             LIMIT 100`,
+          )
+          .all()
+          .map((entry) => ({
+            id: entry.id,
+            action: entry.action,
+            targetType: entry.target_type,
+            targetId: entry.target_id,
+            details: JSON.parse(entry.details_json),
+            createdAt: entry.created_at,
+            adminEmail: entry.admin_email,
+          }));
+        sendJson(response, 200, { entries });
+        return;
+      }
+
+      const userStatusMatch = path.match(
+        /^\/api\/account\/admin\/users\/([^/]+)$/,
+      );
+      if (request.method === "PATCH" && userStatusMatch) {
+        const targetId = decodeURIComponent(userStatusMatch[1]);
+        const body = await readJson(request);
+        const action = typeof body.action === "string" ? body.action : "";
+        const target = statement.findUserById.get(targetId);
+        if (!target)
+          throw apiError("Account not found.", 404, "user_not_found");
+        if (target.id === admin.id) {
+          throw apiError(
+            "You cannot change your own account status.",
+            400,
+            "self_admin_change",
+          );
+        }
+        if (!["approve", "suspend", "reactivate"].includes(action)) {
+          throw apiError(
+            "Choose a valid account action.",
+            400,
+            "invalid_admin_action",
+          );
+        }
+        if (action === "approve" || action === "reactivate") {
+          transaction(() => {
+            database
+              .prepare(
+                "UPDATE users SET account_status = 'active' WHERE id = ?",
+              )
+              .run(target.id);
+            recordAdminAction(admin, action, "user", target.id, {
+              previousStatus: target.account_status,
+              status: "active",
+            });
+          });
+        } else {
+          if (target.role === "admin") {
+            const otherAdmins =
+              database
+                .prepare(
+                  "SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND account_status = 'active' AND id != ?",
+                )
+                .get(target.id)?.count ?? 0;
+            if (otherAdmins === 0) {
+              throw apiError(
+                "The last active administrator cannot be suspended.",
+                409,
+                "last_admin",
+              );
+            }
+          }
+          transaction(() => {
+            database
+              .prepare(
+                "UPDATE users SET account_status = 'suspended' WHERE id = ?",
+              )
+              .run(target.id);
+            database
+              .prepare("DELETE FROM sessions WHERE user_id = ?")
+              .run(target.id);
+            recordAdminAction(admin, action, "user", target.id, {
+              previousStatus: target.account_status,
+              status: "suspended",
+            });
+          });
+        }
+        sendJson(response, 200, {
+          user: getAdminUserRows().find((user) => user.id === target.id),
+        });
+        return;
+      }
+
+      const xpMatch = path.match(/^\/api\/account\/admin\/users\/([^/]+)\/xp$/);
+      if (request.method === "PATCH" && xpMatch) {
+        const targetId = decodeURIComponent(xpMatch[1]);
+        const body = await readJson(request);
+        const xp = Number(body.xp);
+        const reason =
+          typeof body.reason === "string"
+            ? body.reason.trim().slice(0, 240)
+            : "";
+        const target = statement.findUserById.get(targetId);
+        if (!target)
+          throw apiError("Account not found.", 404, "user_not_found");
+        if (!Number.isInteger(xp) || xp < 0 || xp > 1_000_000) {
+          throw apiError(
+            "XP must be a whole number from 0 to 1,000,000.",
+            400,
+            "invalid_xp",
+          );
+        }
+        const progress = statement.getProgress.get(target.id);
+        const previousXp = progress?.xp ?? 0;
+        transaction(() => {
+          statement.updateProgress.run(
+            xp,
+            progress?.streak_days ?? 0,
+            progress?.last_activity_date ?? null,
+            new Date().toISOString(),
+            target.id,
+          );
+          recordAdminAction(admin, "set_user_xp", "user", target.id, {
+            previousXp,
+            xp,
+            reason,
+          });
+        });
+        sendJson(response, 200, {
+          user: getAdminUserRows().find((user) => user.id === target.id),
+        });
+        return;
+      }
+
+      if (request.method === "PUT" && path === "/api/account/admin/sets") {
+        const body = await readJson(request);
+        if (
+          !Array.isArray(body.sets) ||
+          body.sets.length !== PACK_SET_DEFINITIONS.length
+        ) {
+          throw apiError(
+            "Set configuration must include every configured set.",
+            400,
+            "invalid_set_config",
+          );
+        }
+        const seen = new Set();
+        const nextSettings = body.sets.map((row) => {
+          if (
+            !row ||
+            typeof row.setId !== "string" ||
+            !PACK_SET_DEFINITIONS.some((set) => set.id === row.setId)
+          ) {
+            throw apiError(
+              "Set configuration contains an unknown set.",
+              400,
+              "invalid_set_config",
+            );
+          }
+          const xpCost = Number(row.xpCost);
+          const sortOrder = Number(row.sortOrder);
+          if (
+            seen.has(row.setId) ||
+            !Number.isInteger(xpCost) ||
+            xpCost < 0 ||
+            xpCost > 1_000_000 ||
+            !Number.isInteger(sortOrder) ||
+            sortOrder < 0 ||
+            sortOrder > 1_000_000
+          ) {
+            throw apiError(
+              "Set XP costs and order must be unique, valid whole numbers.",
+              400,
+              "invalid_set_config",
+            );
+          }
+          seen.add(row.setId);
+          return { setId: row.setId, xpCost, sortOrder };
+        });
+        if (
+          seen.size !== PACK_SET_DEFINITIONS.length ||
+          new Set(nextSettings.map((row) => row.sortOrder)).size !==
+            nextSettings.length
+        ) {
+          throw apiError(
+            "Every set needs a unique display order.",
+            400,
+            "invalid_set_config",
+          );
+        }
+        const previous = getConfiguredPackSets().map(
+          ({ setId, id, xpCost, sortOrder }) => ({
+            setId: setId ?? id,
+            xpCost,
+            sortOrder,
+          }),
+        );
+        transaction(() => {
+          const update = database.prepare(
+            "UPDATE pack_set_settings SET xp_cost = ?, sort_order = ? WHERE set_id = ?",
+          );
+          for (const row of nextSettings)
+            update.run(row.xpCost, row.sortOrder, row.setId);
+          recordAdminAction(
+            admin,
+            "update_pack_set_settings",
+            "pack_sets",
+            "all",
+            {
+              previous,
+              settings: nextSettings,
+            },
+          );
+        });
+        PACK_SETS = getConfiguredPackSets();
+        await getSetAvailability();
+        sendJson(response, 200, { sets: getAdminSetRows() });
+        return;
+      }
+
+      sendError(response, 404, "Not found.", "not_found");
+      return;
+    }
+
     if (request.method === "POST" && path === "/api/account/register") {
       const body = await readJson(request);
       const email =
         typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
       const password = typeof body.password === "string" ? body.password : "";
       const profile = validateProfile(body.firstName, body.avatar ?? null);
-      enforceRateLimit(`register:${email.slice(0, 254)}`);
+      const ip = requestIp(request);
+      enforceRateLimit(`register-ip:${ip}`, 5);
+      enforceRateLimit(`register-email:${email.slice(0, 254)}`, 5);
+      if (typeof body.website === "string" && body.website.trim()) {
+        sendJson(response, 202, { approvalRequired: true });
+        return;
+      }
       if (!isValidEmail(email)) {
         throw apiError("Enter a valid email address.", 400, "invalid_email");
       }
@@ -710,6 +1146,10 @@ const server = createServer(async (request, response) => {
           400,
           "invalid_password",
         );
+      }
+      if (statement.findUserByEmail.get(email)) {
+        sendJson(response, 202, { approvalRequired: true });
+        return;
       }
       const credentials = await hashPassword(password);
       const userId = ulid();
@@ -724,9 +1164,11 @@ const server = createServer(async (request, response) => {
             profile.firstName,
             profile.avatar,
             now,
+            "user",
+            "pending_approval",
           );
           statement.insertProgress.run(userId, now);
-          statement.insertUnlock.run(userId, STARTER_SET_ID, now);
+          statement.insertUnlock.run(userId, PACK_SETS[0].id, now);
         });
       } catch (error) {
         if (
@@ -734,22 +1176,12 @@ const server = createServer(async (request, response) => {
             "UNIQUE constraint failed: users.email",
           )
         ) {
-          throw apiError(
-            "An account with this email already exists.",
-            409,
-            "email_in_use",
-          );
+          sendJson(response, 202, { approvalRequired: true });
+          return;
         }
         throw error;
       }
-      const token = createSession(userId);
-      const user = statement.findUserById.get(userId);
-      sendJson(
-        response,
-        201,
-        { account: snapshot(user) },
-        { "Set-Cookie": sessionCookie(token) },
-      );
+      sendJson(response, 202, { approvalRequired: true });
       return;
     }
 
@@ -758,6 +1190,7 @@ const server = createServer(async (request, response) => {
       const email =
         typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
       const password = typeof body.password === "string" ? body.password : "";
+      enforceRateLimit(`login-ip:${requestIp(request)}`, 30);
       enforceRateLimit(`login:${email.slice(0, 254)}`);
       const user = statement.findUserByEmail.get(email);
       const valid =
@@ -783,6 +1216,20 @@ const server = createServer(async (request, response) => {
           "Email or password is incorrect.",
           401,
           "invalid_credentials",
+        );
+      }
+      if (user.account_status === "pending_approval") {
+        throw apiError(
+          "Your account is waiting for administrator approval. Try again after it has been approved.",
+          403,
+          "account_pending_approval",
+        );
+      }
+      if (user.account_status !== "active") {
+        throw apiError(
+          "This account is not currently available. Contact an administrator if you think this is a mistake.",
+          403,
+          "account_unavailable",
         );
       }
       const token = createSession(user.id);
@@ -919,6 +1366,14 @@ const server = createServer(async (request, response) => {
       }
       const available = await getSetAvailability();
       const set = PACK_SETS.find((candidate) => candidate.id === body.setId);
+      const setStatus = set ? setAvailabilityFor(set.id, available) : null;
+      if (setStatus?.available === null) {
+        throw apiError(
+          "Set artwork availability could not be checked. Please try again.",
+          503,
+          "set_availability_unverified",
+        );
+      }
       if (!set || !availableSet(set.id, available)) {
         throw apiError(
           "This set is unavailable because its card artwork is incomplete.",
@@ -962,6 +1417,14 @@ const server = createServer(async (request, response) => {
         throw apiError("Pack card count is invalid.", 400, "invalid_pack");
       }
       const available = await getSetAvailability();
+      const setStatus = setAvailabilityFor(setId, available);
+      if (setStatus?.available === null) {
+        throw apiError(
+          "Set artwork availability could not be checked. Please try again.",
+          503,
+          "set_availability_unverified",
+        );
+      }
       if (
         !PACK_SETS.some((set) => set.id === setId) ||
         !availableSet(setId, available)

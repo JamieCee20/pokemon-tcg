@@ -27,6 +27,9 @@ export interface AccountData {
     email: string;
     firstName: string;
     avatar: AccountAvatar | null;
+    role: "user" | "admin";
+    accountStatus:
+      "pending_approval" | "active" | "suspended";
   };
   progression: AccountProgression;
 }
@@ -35,7 +38,53 @@ export interface PackSetAvailability {
   setId: string;
   name: string;
   xpCost: number;
-  available: boolean;
+  available: boolean | null;
+  sortOrder: number;
+}
+
+export interface RegistrationResult {
+  approvalRequired: boolean;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  firstName: string;
+  avatar: AccountAvatar | null;
+  role: "user" | "admin";
+  status: "pending_approval" | "active" | "suspended";
+  createdAt: string;
+  xp: number;
+  streakDays: number;
+  unlockedSets: number;
+  collectedCards: number;
+}
+
+export interface AdminPackSet {
+  setId: string;
+  name: string;
+  xpCost: number;
+  sortOrder: number;
+  available: boolean | null;
+}
+
+export interface AdminOverview {
+  users: {
+    total: number;
+    pending_approval: number;
+    active: number;
+    suspended: number;
+  };
+}
+
+export interface AdminAuditEntry {
+  id: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+  adminEmail: string;
 }
 
 export interface PackRevealResult {
@@ -115,12 +164,12 @@ export async function registerAccount(input: {
   password: string;
   firstName: string;
   avatar: AccountAvatar | null;
-}): Promise<AccountData> {
-  const response = await request<{ account: AccountData }>("/register", {
+  website: string;
+}): Promise<RegistrationResult> {
+  return request<RegistrationResult>("/register", {
     method: "POST",
     body: JSON.stringify(input),
   });
-  return response.account;
 }
 
 export async function loginAccount(input: {
@@ -204,4 +253,61 @@ export async function recordPackReveal(input: {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export async function getAdminOverview(): Promise<AdminOverview> {
+  const response = await request<{ overview: AdminOverview }>(
+    "/admin/overview",
+  );
+  return response.overview;
+}
+
+export async function getAdminUsers(): Promise<AdminUser[]> {
+  const response = await request<{ users: AdminUser[] }>("/admin/users");
+  return response.users;
+}
+
+export async function updateAdminUserStatus(
+  userId: string,
+  action: "approve" | "suspend" | "reactivate",
+): Promise<AdminUser> {
+  const response = await request<{ user: AdminUser }>(
+    `/admin/users/${encodeURIComponent(userId)}`,
+    { method: "PATCH", body: JSON.stringify({ action }) },
+  );
+  return response.user;
+}
+
+export async function updateAdminUserXp(
+  userId: string,
+  xp: number,
+  reason: string,
+): Promise<AdminUser> {
+  const response = await request<{ user: AdminUser }>(
+    `/admin/users/${encodeURIComponent(userId)}/xp`,
+    { method: "PATCH", body: JSON.stringify({ xp, reason }) },
+  );
+  return response.user;
+}
+
+export async function getAdminSets(): Promise<AdminPackSet[]> {
+  const response = await request<{ sets: AdminPackSet[] }>("/admin/sets");
+  return response.sets;
+}
+
+export async function saveAdminSets(
+  sets: Pick<AdminPackSet, "setId" | "xpCost" | "sortOrder">[],
+): Promise<AdminPackSet[]> {
+  const response = await request<{ sets: AdminPackSet[] }>("/admin/sets", {
+    method: "PUT",
+    body: JSON.stringify({ sets }),
+  });
+  return response.sets;
+}
+
+export async function getAdminAudit(): Promise<AdminAuditEntry[]> {
+  const response = await request<{ entries: AdminAuditEntry[] }>(
+    "/admin/audit",
+  );
+  return response.entries;
 }

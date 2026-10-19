@@ -37,7 +37,7 @@ Run `npm run dev:progress` in a second terminal to use accounts and XP locally. 
 - Favourites store card IDs separately for each selected language in local storage. Their records are resolved with a four-request concurrency cap; IDs remain removable when a card is unavailable.
 - The pack simulator supports guest openings of the starter set and email/password accounts with ULID user IDs, an optional preset avatar, synced collection progress, XP, daily streaks, and XP-unlocked sets. XP is awarded for a pack's first reveal, a newly collected card, the account's first foil and first full-art pull, completed packs, and daily streak activity. Set unlocking costs XP.
 - The account API checks the English TCGdex set records before offering a pack set. Sets are available only when every card record (including any bonus subset) contains a TCGdex image URL.
-- `config/pack-sets.json` is shared by the pack UI and account API. Its array order controls how sets are listed, and each entry sets the XP cost and pack size. Move entries to change the progression order; the next unlock still depends on XP rather than completing the previous set.
+- `config/pack-sets.json` defines available pack sets, default XP costs, pack size, and pack data. The account database stores admin-managed XP costs and display order, which the pack and account pages fetch from the API; the next unlock still depends on XP rather than completing the previous set.
 
 ## Structure
 
@@ -103,6 +103,8 @@ For local development, create `.env` from `.env.example` and put the key there, 
 npm run dev:pricing
 ```
 
+The progress API loads the same `.env` with `npm run dev:progress`. Account registration does not send email; new accounts wait for manual approval in the admin panel.
+
 Vite forwards `/api/apitcg` to the local proxy. To inspect one small result, use `curl -i 'http://localhost:5173/api/apitcg/products?name=charizard&limit=1'`; check the `X-APITCG-Cache` and `X-APITCG-Requests-Today` response headers to see whether it used the cache and how many upstream calls have been made today. Catalogue status is available at `/api/apitcg/catalog`; locally stored cards are paged at `/api/apitcg/catalog/products?set=SET_ID&page=1&limit=24`. In Docker, the cache and catalogue volume is created automatically.
 
 Currency conversion rates are fetched server-side from [Frankfurter](https://frankfurter.dev/) and cached for 12 hours. These are daily reference rates, so converted prices are estimates rather than additional market quotes. The currency selection is saved in the browser.
@@ -115,7 +117,11 @@ The Vite version in the lockfile supports Node.js 20.19+ or 22.12+, but the acco
 
 The browser stores the English set summary index under `card-atlas.set-catalogue.v2` and other language indexes with a language suffix, such as `card-atlas.set-catalogue.v2.ja`. Favourites use `card-atlas.favourites.v1` for English and a language suffix for other languages. Guest pack progress uses `card-atlas.pack-collection.v1`. The selected language is stored under `card-atlas.catalogue-language.v1`; the price currency uses `card-atlas.price-currency.v1`, and the card-effect preference uses `card-atlas.card-effect.v1`. Clear these keys in the browser's developer tools to reset individual app data. Clearing browser storage also removes favourites and guest collection progress. Catalogue caches expire after 24 hours; card search and details use a 10-minute query stale time.
 
-Account collection, XP, streak, and set unlock data is stored in the server's `account-progress` Docker volume. Guest collection data remains in that browser. Account passwords are stored as scrypt hashes, and session tokens are stored as hashes. Email verification and email password recovery are not configured; signed-in users can change their password from the account page. The app does not represent ownership of physical cards or provide offline image downloads.
+Account collection, XP, streaks, set unlocks, admin roles, and audit history are stored in the server's `account-progress` Docker volume. Guest collection data remains in the browser. Passwords use scrypt hashes and session tokens are stored as hashes. New accounts need manual administrator approval before sign-in; the app does not send email or provide email password recovery. Signed-in users can change their password. The app does not represent ownership of physical cards or provide offline image downloads.
+
+The admin page is available at `/#/admin` to administrator accounts. `jamiecee20.1999@gmail.com` is the bootstrap administrator. Register the account, then explicitly promote it with the one-time command below. An email address alone never grants administrator access. Other accounts stay pending until approved in the admin panel. Administrators can approve or suspend accounts, adjust player XP, and set pack-set order and XP costs. These settings and changes are stored in SQLite; admin changes are recorded in the audit history. New set definitions still need to be added to `config/pack-sets.json` and the app's pack data before they can be opened.
+
+Account registration uses email and IP rate limits plus a honeypot field. Email addresses are format-checked but not verified. The app's Nginx forwards `X-Real-IP` to the account API, so the outer reverse proxy must set that header to the visitor address. If the DNS record is Cloudflare-proxied, configure Nginx's real-IP module to trust Cloudflare's published IP ranges and use `CF-Connecting-IP`; do not trust that header from arbitrary clients. See [Cloudflare's Nginx real-IP guidance](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/).
 
 The next progress API deployment applies a one-time progression reset to existing accounts: XP and paid set unlocks are cleared, the first configured set is re-unlocked, and one-time XP achievement flags are reset. Saved card collections, streak state, accounts, passwords, and sessions are retained.
 
@@ -169,9 +175,20 @@ POKEMON_API_KEY=your_rapidapi_key
 POKEMON_PRICE_DAILY_LIMIT=90
 APITCG_API_KEY=your_apitcg_key
 APITCG_DAILY_REQUEST_LIMIT=2
+ADMIN_EMAILS=jamiecee20.1999@gmail.com
 ```
 
 Replace `nginx-proxy` with the exact name you found. Get a key by subscribing to the provider's [CardMarket API TCG product on RapidAPI](https://rapidapi.com/tcggopro/api/cardmarket-api-tcg). Keep the key in `.env`; the pricing proxy reads it at container runtime. Do not put it in a `VITE_*` variable because Vite embeds those values in the public browser bundle. The app can still browse cards if the key is empty, but price lookups will report that pricing is not configured.
+
+The bootstrap admin address is `jamiecee20.1999@gmail.com`, and it is the default `ADMIN_EMAILS` value in Docker Compose. Register this account first, then promote it once from the project root on your server:
+
+```sh
+docker compose exec -T progress-api node server/promote-admin.mjs jamiecee20.1999@gmail.com
+```
+
+The command only accepts the default admin address or addresses listed in `ADMIN_EMAILS`. After promotion, sign in and approve new users at `/#/admin`. To promote another configured administrator, add the address to `ADMIN_EMAILS` and use the same command with that address.
+
+For local development, use `npm run admin:promote -- jamiecee20.1999@gmail.com` after registering the account.
 
 Paste your APITCG key as the value of `APITCG_API_KEY` in this same project-root `.env` file. Leave the existing `POKEMON_API_KEY` setting for the current pricing provider. APITCG's key is passed only by the server as an `x-api-key` request header. `APITCG_DAILY_REQUEST_LIMIT=2` caps uncached APITCG calls per UTC day; set it to `1` for a more conservative trial or `0` to remove the local cap. The search response cache, catalogue, and sync progress persist in the Docker `apitcg-cache` volume.
 

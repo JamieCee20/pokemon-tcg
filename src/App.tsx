@@ -11,6 +11,7 @@ import { CardDetailsPage } from "./features/cards/CardDetailsPage";
 import { CardSearchPage } from "./features/cards/CardSearchPage";
 import { AccountProvider } from "./features/account/AccountContext";
 import { AccountPage } from "./features/account/AccountPage";
+import { AdminPage } from "./features/account/AdminPage";
 import { PackSimulatorPage } from "./features/packs/PackSimulatorPage";
 import { LicensesPage } from "./features/legal/LicensesPage";
 import { SetPage } from "./features/sets/SetPage";
@@ -49,6 +50,7 @@ const router = createHashRouter([
       { path: "cards/:cardId", element: <CardDetailsPage /> },
       { path: "packs", element: <PackSimulatorPage /> },
       { path: "account", element: <AccountPage /> },
+      { path: "admin", element: <AdminPage /> },
       { path: "licenses", element: <LicensesPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],
