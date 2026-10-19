@@ -48,13 +48,13 @@ export function AppLayout() {
           <Link
             className="brand"
             to={`/sets?lang=${language}`}
-            aria-label="Card Atlas home"
+            aria-label="Cee’s Card Vault home"
           >
             <span className="brand__mark" aria-hidden="true">
               <span />
             </span>
             <span className="brand__name">
-              Card Atlas<span className="brand__period">.</span>
+              Cee’s Card Vault
             </span>
           </Link>
           <nav className="main-nav" aria-label="Main navigation">
@@ -113,7 +113,7 @@ export function AppLayout() {
         <Outlet />
       </main>
       <footer className="site-footer">
-        <span>Card Atlas is an unofficial fan project.</span>
+        <span>Cee’s Card Vault is an unofficial fan project.</span>
         <span>
           Card data and artwork are provided by{" "}
           <a href="https://tcgdex.dev" target="_blank" rel="noreferrer">

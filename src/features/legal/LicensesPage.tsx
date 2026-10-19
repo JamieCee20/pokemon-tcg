@@ -4,9 +4,9 @@ import { PageHeading } from "../../components/States";
 export function LicensesPage() {
   return (
     <PageFrame className="license-page">
-      <PageHeading eyebrow="About Card Atlas" title="Licenses & data sources" />
+      <PageHeading eyebrow="About Cee’s Card Vault" title="Licenses & data sources" />
       <p className="license-page__intro">
-        Card Atlas uses third-party card data, artwork references, and market
+        Cee’s Card Vault uses third-party card data, artwork references, and market
         prices. Their attribution and licensing information is collected here.
       </p>
 
@@ -102,7 +102,7 @@ export function LicensesPage() {
       </section>
 
       <p className="license-page__notice">
-        Card Atlas is an unofficial fan project and is not affiliated with
+        Cee’s Card Vault is an unofficial fan project and is not affiliated with
         Nintendo, Creatures Inc., GAME FREAK, or The Pokémon Company. Market
         prices are provider data and may change.
       </p>

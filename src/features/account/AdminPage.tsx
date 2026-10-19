@@ -190,7 +190,7 @@ export function AdminPage() {
     <PageFrame className="page-frame--account admin-page">
       <header className="account-heading">
         <div>
-          <p className="eyebrow">CARD ATLAS · ADMIN</p>
+          <p className="eyebrow">CEE’S CARD VAULT · ADMIN</p>
           <h1>Administration</h1>
           <p>Approve accounts, manage XP, and set pack unlock requirements.</p>
         </div>

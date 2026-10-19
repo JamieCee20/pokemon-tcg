@@ -1,10 +1,10 @@
 # Third-party data, API and licensing notices
 
-Card Atlas uses the services and data sources below. This notice describes those third-party sources; it does not grant rights to Pokémon intellectual property or set a license for Card Atlas source code.
+Cee’s Card Vault uses the services and data sources below. This notice describes those third-party sources; it does not grant rights to Pokémon intellectual property or set a license for Cee’s Card Vault source code.
 
 ## TCGdex card and set database
 
-Card Atlas uses TCGdex for Pokémon TCG card and set data, localized names, rarity information, and card artwork URLs. The TCGdex cards database repository states that its database is licensed under the MIT License. TCGdex's JavaScript/TypeScript SDK (`@tcgdex/sdk`) is also MIT-licensed.
+Cee’s Card Vault uses TCGdex for Pokémon TCG card and set data, localized names, rarity information, and card artwork URLs. The TCGdex cards database repository states that its database is licensed under the MIT License. TCGdex's JavaScript/TypeScript SDK (`@tcgdex/sdk`) is also MIT-licensed.
 
 - Website and API: <https://tcgdex.dev/> and <https://api.tcgdex.net/>
 - Database repository: <https://github.com/tcgdex/cards-database>
@@ -39,6 +39,6 @@ The optional APITCG explorer and catalogue sync use <https://www.apitcg.com/> an
 - Website: <https://www.apitcg.com/>
 - API documentation: <https://docs.apitcg.com/>
 
-## Card Atlas source code
+## Cee’s Card Vault source code
 
-This repository does not currently declare a license for Card Atlas's own source code. The third-party licenses above apply only to the corresponding third-party components and data; they do not license Card Atlas source code.
+This repository does not currently declare a license for Cee’s Card Vault source code. The third-party licenses above apply only to the corresponding third-party components and data; they do not license Cee’s Card Vault source code.

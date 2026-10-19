@@ -1,8 +1,8 @@
-# Card Atlas
+# Cee’s Card Vault
 
 A local Pokémon TCG catalogue for browsing sets and cards in multiple languages, viewing card details and market prices, and keeping browser-local favourites. Card data and artwork come from TCGdex; market prices come from Pokemon API. This is an unofficial fan project; it is not affiliated with Nintendo, Creatures Inc., GAME FREAK, or The Pokémon Company.
 
-Third-party data sources and API licensing notices are available in [THIRD_PARTY_NOTICES.md](public/THIRD_PARTY_NOTICES.md) and from the application's **Licenses & data sources** page. TCGdex states that its database is MIT-licensed. The TCGdex notice is included in that file; API-provider data access remains subject to the relevant provider terms and account plan. This repository does not declare a license for Card Atlas's own source code.
+Third-party data sources and API licensing notices are available in [THIRD_PARTY_NOTICES.md](public/THIRD_PARTY_NOTICES.md) and from the application's **Licenses & data sources** page. TCGdex states that its database is MIT-licensed. The TCGdex notice is included in that file; API-provider data access remains subject to the relevant provider terms and account plan. This repository does not declare a license for Cee’s Card Vault source code.
 
 The app needs an internet connection for fresh catalogue data and uncached artwork. It does not download artwork for offline use.
 

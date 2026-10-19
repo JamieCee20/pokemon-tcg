@@ -30,38 +30,36 @@
   width: fit-content;
 }
 .brand__mark {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 32px;
   border: 1.5px solid var(--color-gold);
-  border-radius: 50%;
+  border-radius: 5px;
   display: grid;
   place-items: center;
   position: relative;
 }
 .brand__mark::before {
   content: "";
-  width: 22px;
-  height: 1px;
+  width: 13px;
+  height: 13px;
   position: absolute;
-  background: var(--color-gold);
+  border: 1px solid var(--color-gold);
+  border-radius: 50%;
 }
 .brand__mark span {
-  width: 7px;
-  height: 7px;
-  border: 1.5px solid var(--color-gold);
+  width: 4px;
+  height: 4px;
+  border: 1px solid var(--color-gold);
   border-radius: 50%;
-  background: var(--color-bg);
+  background: var(--color-gold);
   z-index: 1;
 }
 .brand__name {
   font:
-    600 20px/1 Georgia,
+    600 19px/1 Georgia,
     "Times New Roman",
     serif;
-  letter-spacing: -0.4px;
-}
-.brand__period {
-  color: var(--color-gold);
+  letter-spacing: -0.5px;
 }
 
 .main-nav {
@@ -1535,11 +1533,11 @@
     gap: 10px;
   }
   .brand__name {
-    font-size: 18px;
+    font-size: 16px;
   }
   .brand__mark {
-    width: 25px;
-    height: 25px;
+    width: 22px;
+    height: 29px;
   }
   .header-search {
     width: 40px;

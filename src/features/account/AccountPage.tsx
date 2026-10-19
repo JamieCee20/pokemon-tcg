@@ -256,7 +256,7 @@ export function AccountPage() {
     <PageFrame className="page-frame--account">
       <header className="account-heading">
         <div>
-          <p className="eyebrow">CARD ATLAS · PLAYER PROFILE</p>
+          <p className="eyebrow">CEE’S CARD VAULT · PLAYER PROFILE</p>
           <h1>Your account</h1>
           <p>Save your collection, earn XP, and unlock more pack sets.</p>
         </div>

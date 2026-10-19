@@ -110,7 +110,7 @@ function PackBack({ preparing = false }: { preparing?: boolean }) {
       <span className="pack-card__back-ring" aria-hidden="true">
         <span />
       </span>
-      <span className="pack-card__back-title">CARD ATLAS</span>
+      <span className="pack-card__back-title">CEE’S CARD VAULT</span>
       <span className="pack-card__back-caption">TRADING CARD GAME</span>
       {preparing && (
         <span className="pack-card__preparing">PREPARING ARTWORK…</span>
@@ -533,7 +533,7 @@ export function PackSimulatorPage() {
     <PageFrame className="page-frame--packs">
       <header className="pack-page-heading">
         <div>
-          <p className="eyebrow">CARD ATLAS · PACK LAB</p>
+          <p className="eyebrow">CEE’S CARD VAULT · PACK LAB</p>
           <h1>Pack opening simulator</h1>
           <p>
             Open a simulated English {profile.name} pack. Turn over one card at
