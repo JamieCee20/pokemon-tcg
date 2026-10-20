@@ -375,7 +375,7 @@ function DealtCard({
       <div className="pack-card__front">
         {card.rarity === "energy" ? (
           <div
-            className={`pack-energy pack-energy--${card.energyType ?? "grass"}`}
+            className={`pack-energy pack-energy--compact pack-energy--${card.energyType ?? "grass"}`}
           >
             <span aria-hidden="true">{card.energySymbol ?? "✦"}</span>
             <strong>{card.name}</strong>
@@ -414,6 +414,8 @@ export function PackSimulatorPage() {
   );
   const [currentFaceUp, setCurrentFaceUp] = useState(false);
   const [movingToBack, setMovingToBack] = useState(false);
+  const [revealingAll, setRevealingAll] = useState(false);
+  const [revealedAllAtOnce, setRevealedAllAtOnce] = useState(false);
   const [opening, setOpening] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [progressError, setProgressError] = useState("");
@@ -642,6 +644,7 @@ export function PackSimulatorPage() {
     collectionAtPackStart.current = new Set(collectedIds);
     seenPackCardIds.current = new Set();
     setNewlyCollectedPositions(new Set());
+    setRevealedAllAtOnce(false);
     setOpenedPackType(packType);
     setOpening(true);
     setProgressError("");
@@ -658,6 +661,9 @@ export function PackSimulatorPage() {
         );
         nextSessionId = session.packId;
         setAccount(session.account);
+        void queryClient.invalidateQueries({
+          queryKey: ["account", "pack-themes", account.user.id],
+        });
         if (packType === "god") {
           setProgressMessage(
             session.godPackFree
@@ -772,29 +778,17 @@ export function PackSimulatorPage() {
   }
 
   async function advanceCard() {
-    if (!pack || opening || movingToBack || savingProgress || allRevealed)
+    if (
+      !pack ||
+      opening ||
+      movingToBack ||
+      savingProgress ||
+      revealingAll ||
+      allRevealed
+    )
       return;
     if (!currentFaceUp) {
-      if (currentCard && currentCard.rarity !== "energy") {
-        const alreadyCollected = collectionAtPackStart.current.has(
-          currentCard.id,
-        );
-        const alreadySeenInPack = seenPackCardIds.current.has(currentCard.id);
-        seenPackCardIds.current.add(currentCard.id);
-        if (!alreadyCollected && !alreadySeenInPack) {
-          setNewlyCollectedPositions((previous) =>
-            new Set(previous).add(revealed),
-          );
-        }
-        setCollection((previous) => {
-          const existing = previous[selectedSetId] ?? [];
-          if (existing.includes(currentCard.id)) return previous;
-          return {
-            ...previous,
-            [selectedSetId]: [...existing, currentCard.id],
-          };
-        });
-      }
+      if (currentCard) markCardCollected(currentCard, revealed);
       setCurrentFaceUp(true);
       if (account && packSessionId && currentCard) {
         await saveReveal(packSessionId, revealed, currentCard);
@@ -822,11 +816,85 @@ export function PackSimulatorPage() {
     );
   }
 
+  function markCardCollected(card: PackCard, position: number) {
+    if (card.rarity === "energy") return;
+    const alreadyCollected = collectionAtPackStart.current.has(card.id);
+    const alreadySeenInPack = seenPackCardIds.current.has(card.id);
+    seenPackCardIds.current.add(card.id);
+    if (!alreadyCollected && !alreadySeenInPack) {
+      setNewlyCollectedPositions((previous) => new Set(previous).add(position));
+    }
+    setCollection((previous) => {
+      const existing = previous[selectedSetId] ?? [];
+      if (existing.includes(card.id)) return previous;
+      return {
+        ...previous,
+        [selectedSetId]: [...existing, card.id],
+      };
+    });
+  }
+
+  async function revealAll() {
+    if (
+      !pack ||
+      opening ||
+      movingToBack ||
+      savingProgress ||
+      revealingAll ||
+      allRevealed
+    )
+      return;
+
+    setRevealingAll(true);
+    setProgressError("");
+    let nextPosition = revealed;
+
+    if (pendingReveal) {
+      const saved = await saveReveal(
+        pendingReveal.packId,
+        pendingReveal.position,
+        pendingReveal.card,
+      );
+      if (!saved) {
+        setCurrentFaceUp(true);
+        setRevealingAll(false);
+        return;
+      }
+      nextPosition = Math.max(nextPosition, pendingReveal.position + 1);
+    } else if (currentFaceUp) {
+      // The face-up card was already saved when it was turned over.
+      nextPosition += 1;
+    }
+
+    for (let position = nextPosition; position < pack.length; position += 1) {
+      const card = pack[position];
+      if (!card) continue;
+      markCardCollected(card, position);
+      if (account && packSessionId) {
+        const saved = await saveReveal(packSessionId, position, card);
+        if (!saved) {
+          setRevealed(position);
+          setCurrentFaceUp(true);
+          setRevealingAll(false);
+          return;
+        }
+      }
+    }
+
+    setRevealedAllAtOnce(true);
+    setRevealed(pack.length);
+    setCurrentFaceUp(false);
+    setMovingToBack(false);
+    setPendingReveal(null);
+    setRevealingAll(false);
+  }
+
   function selectSet(setId: string) {
     if (openTimeout.current !== null) window.clearTimeout(openTimeout.current);
     if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
     setSelectedSetId(setId);
     setPack(null);
+    setRevealedAllAtOnce(false);
     setOpenedPackType("standard");
     setPackSessionId(null);
     setRevealed(0);
@@ -943,6 +1011,7 @@ export function PackSimulatorPage() {
                   opening ||
                   movingToBack ||
                   savingProgress ||
+                  revealingAll ||
                   !currentArtworkReady
                 }
                 onClick={advanceCard}
@@ -968,7 +1037,7 @@ export function PackSimulatorPage() {
             <span>Choose a set</span>
             <select
               value={selectedSetId}
-              disabled={opening}
+              disabled={opening || savingProgress || revealingAll}
               onChange={(event) => selectSet(event.target.value)}
             >
               {eligibleProfiles.length === 0 ? (
@@ -1156,6 +1225,7 @@ export function PackSimulatorPage() {
                   opening ||
                   movingToBack ||
                   savingProgress ||
+                  revealingAll ||
                   !currentArtworkReady
                 }
                 onClick={() => void advanceCard()}
@@ -1173,6 +1243,19 @@ export function PackSimulatorPage() {
                             ? "Retry save and move card"
                             : `Move card to the back · ${revealed + 1} of ${pack.length}`
                           : `Turn over card · ${revealed + 1} of ${pack.length}`}
+              </button>
+            )}
+            {pack && !allRevealed && (
+              <button
+                className="pack-button pack-button--secondary"
+                type="button"
+                disabled={
+                  opening || movingToBack || savingProgress || revealingAll
+                }
+                aria-busy={revealingAll}
+                onClick={() => void revealAll()}
+              >
+                {revealingAll ? "Saving pulls…" : "Reveal all"}
               </button>
             )}
             <span className="pack-simulator__session">
@@ -1213,7 +1296,7 @@ export function PackSimulatorPage() {
           )}
           {allRevealed && (
             <div
-              className={`pack-table pack-table--${tableThemeStyle}`}
+              className={`pack-table pack-table--${tableThemeStyle}${revealedAllAtOnce ? " pack-table--instant" : ""}`}
               role="list"
               aria-label="Your cards"
             >

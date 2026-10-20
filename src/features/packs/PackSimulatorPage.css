@@ -726,6 +726,32 @@
   font-size: 8px;
 }
 
+.pack-energy--compact {
+  gap: 3px;
+  padding: 6px 3px;
+}
+
+.pack-energy--compact > span {
+  flex: 0 0 auto;
+  width: 38%;
+  max-width: 28px;
+  border-width: 1px;
+  font-size: clamp(13px, 1.6vw, 20px);
+  box-shadow: 0 0 9px rgb(255 255 255 / 22%);
+}
+
+.pack-energy--compact strong {
+  max-width: 100%;
+  font-size: clamp(6px, 0.72vw, 8px);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.pack-energy--compact small {
+  font-size: 6px;
+  line-height: 1;
+}
+
 .pack-energy--grass {
   --energy-dark: #205d3b;
   --energy-light: #9fcd69;
@@ -916,6 +942,12 @@
   opacity: 0;
   transform-origin: center bottom;
   animation: pack-deal-on-table 520ms cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+
+.pack-table--instant .pack-table-card {
+  animation: none;
+  opacity: 1;
+  transform: none;
 }
 
 .pack-table--aurora {

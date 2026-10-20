@@ -1,44 +1,30 @@
-# Pack Simulator Roadmap
+# Cee’s Card Vault Roadmap
 
 ## Goal
 
-Grow the pack simulator into a persistent collection and progression experience. A player should be able to open simulated packs, see their set completion, and carry that progress between visits and devices. Progression should add goals and rewards without changing the published pull rates or making rare cards a requirement for enjoying the rest of the simulator.
+Grow the pack simulator into a persistent collection and progression experience. Players can open simulated packs, track set completion, and carry progress between visits and devices. Progression should add goals and rewards without changing the published pull rates.
 
-This is a digital simulation only. Collection progress does not represent ownership of physical cards.
+This is a digital simulation. Collection progress does not represent ownership of physical cards.
 
-## Current foundation
+## Current status
 
-- Packs can be opened for the configured sets, with the simulator's published pull-rate profiles.
-- The set roadmap shows which card identities have been revealed and grayscales the rest.
-- Guest collection progress is stored in browser local storage, per set. Signed-in progress is stored on the server and can be used across devices.
-- Email/password accounts use ULID user IDs, first names, optional preset avatars, scrypt password hashes, and HTTP-only session cookies.
-- Existing browser collection IDs can be merged into an account. Imported cards do not award XP.
-- The tracker currently records card identity, not separate normal, holo, and reverse finishes.
-- Pack catalogues are loaded from TCGdex. The current set list and pull-rate profiles are configured in the app.
-- Only sets whose full English TCGdex card records all contain image URLs are eligible for unlocks. That check is cached for 12 hours.
-- XP, daily streak state, achievements, pack reveals, and set unlocks are stored in SQLite on the server.
-- Account cosmetics, mastery milestones, and the last checked TCGdex card-ID catalogues are also stored in SQLite.
+Phases 1, 2, 3, and the first collection and theme scope in Phase 5 are implemented. Phase 4 goals, optional social features, and a mobile-ready API/app remain future work.
 
-## Recommended phases
+### Implemented foundation
 
-### Phase 1 — Collection roadmap (complete)
+- The catalogue uses TCGdex for card and set data. Pack profiles and available sets are configured in the project; only sets with complete English card artwork are eligible for progression.
+- The pack simulator supports guest openings of the starter set and signed-in pack progress.
+- The collection roadmap records unique card identities per set, grayscales uncollected cards, and supports merging browser progress into an account. Importing cards does not award XP.
+- Email/password accounts use ULID user IDs, scrypt password hashes, and HTTP-only sessions. Accounts require manual administrator approval; registration has email/IP rate limits and a honeypot. Email verification and email password recovery are not enabled.
+- XP, streaks, pack reveals, set unlocks, collections, and admin audit history persist in SQLite. Guest collections remain in browser storage.
+- Administrators can approve or suspend accounts, adjust XP, and configure set order, unlock thresholds, and per-set God Pack cost and rolling limits.
+- Pack themes use the six paired wrapper/card-back designs from the `cees-card-vault-themes` handover. Players select themes from Account customisation; unlocks are earned through pack progress and persist to the account.
+- Set mastery tracks unique card identities: Explorer (25%), Collector (50%), Archivist (75%), and Master (100%). The account shows mastery and milestones. Collection display options include grid, binder, and rarity groups.
+- Pack openings preserve configured pull rates. God Packs keep energy first and use IR-or-higher cards for all remaining slots.
 
-- Show the set card roadmap and collection count below the observed pull rates.
-- Mark a card collected when it is revealed; keep the guest collection in browser storage.
-- Keep guest pack openings available for the starter set.
+### Current progression rules
 
-### Phase 2 — Accounts and synced progress (implemented)
-
-- Register and sign in with email and password; user IDs are ULIDs.
-- Store the first name and an optional preset avatar. Profile editing and password changes are available after sign-in.
-- Store sessions, XP, streak state, unlocks, achievements, pack reveals, and unique collected card IDs in the persistent SQLite database.
-- Offer an explicit merge of browser collection IDs into the account. This merge does not mint XP.
-- Keep guest mode. Guest XP is not tracked; only the starter set can be opened until the player signs in.
-- Email verification and email password recovery remain future work. A signed-in player can change their password.
-
-### Phase 3 — XP, streaks, and unlock rules (implemented)
-
-Current XP rewards are deterministic and do not change pack probabilities:
+XP rewards are deterministic and do not change card odds:
 
 - First card revealed in each pack: **+1 XP**.
 - First copy of a card identity in a set: **+5 XP**; duplicates do not add XP.
@@ -47,66 +33,124 @@ Current XP rewards are deterministic and do not change pack probabilities:
 - Complete all reveals in a pack: **+3 XP**.
 - First pack session each UTC day: **+5 XP**, plus **+2 XP per consecutive streak day**, capped at **+15 XP**.
 
-The first configured set is free. Set unlocks use lifetime XP thresholds and do not spend the available XP balance. The shared `config/pack-sets.json` file sets the order and threshold for each pack set: Journey Together (free), Surging Sparks (350 XP), Stellar Crown (800), Twilight Masquerade (1,500), Scarlet & Violet—151 (2,500), Paldean Fates (4,000), Pitch Black (4,500), Black Bolt (5,000), White Flare (5,500), Chaos Rising (6,000), Perfect Order (6,500), Phantasmal Flames (7,000), Prismatic Evolutions (7,500), Mega Evolution (8,000), Destined Rivals (8,500), Ascended Heroes (9,000), and 30th Celebration (9,500). Move entries in this file to change the default progression order and edit `xpCost` to tune the threshold. Admin-edited order and thresholds are stored in SQLite. Each set is unlocked by XP alone; completing a previous set is not required. The progress API checks TCGdex artwork eligibility before displaying or unlocking a set.
+Set access uses lifetime XP thresholds and does not spend the available XP balance. The first configured set is free. Admin changes to set order and XP thresholds are saved in SQLite; `config/pack-sets.json` supplies the initial configuration. Eligibility checks ensure the set has artwork for its full English card list.
 
-God Packs cost available XP or a rare free credit, keep the energy card first, and draw every remaining slot from the set's IR-or-higher rarity pool using the set's observed rarity rates. Previously collected cards can appear again. Completing a signed-in standard pack has a 1-in-1,000 chance to award a free credit for that set; one unspent credit can be held per set. Free openings count toward the set's configured limit. Administrators configure each set's price and rolling limit independently, such as two packs per 1 day or one pack per 14 days. Initial prices start at 1,000 XP and rise by 500 XP every three set positions. The progress API enforces the settings; God Packs follow the same XP reward rules as standard packs, including one-time rewards for collection milestones.
+God Packs cost available XP or a rare free credit. Administrators configure cost, maximum openings, and the rolling period independently for each set. Completing a signed-in standard pack has a **1-in-1,000** chance to award a free credit; one unused credit can be held per set. Free openings count toward the limit. God Packs follow the normal XP rules, and duplicates remain possible.
 
-The earlier progression reset cleared existing account XP and paid set unlocks, re-unlocked the first configured set, and cleared one-time XP achievement flags. The lifetime XP migration initializes progress from the current XP balance and thresholds of already unlocked sets. Player accounts, sessions, card collections, and streak state are preserved.
+## Roadmap
 
-### Phase 4 — Goals and streak flexibility
+### Phase 1 — Collection roadmap (complete)
 
-Expand the daily streak feature without making missed days feel punishing.
+- Show each eligible set’s cards and collection count.
+- Mark collected card identities and grayscale uncollected cards.
+- Keep guest collection progress in browser storage and allow it to be imported into an account.
 
-- Add optional daily and weekly goals, such as revealing a new card, opening packs from a chosen set, or finding a card of a given rarity.
-- Consider a limited grace day or streak freeze earned through play.
-- Consider whether the daily reset should be configurable to the player's local timezone; it currently resets at 00:00 UTC.
-- Never lock previously unlocked sets or remove collection progress after a missed day.
-- Keep rewards bounded so streaks and repeated trivial actions cannot overwhelm the set unlock economy.
+### Phase 2 — Accounts, approval, and synced progress (complete)
 
-### Phase 5 — Rewards and collection tools (implemented foundation)
+- Email/password registration and sign-in with ULID account IDs.
+- Profile name, preset avatar, password change, and persistent server sessions.
+- Manual approval and account management in the admin page; account registration does not send email.
+- Sync collections, XP, streaks, achievements, pack reveals, and unlocks across devices.
+- Merge existing browser collections without awarding XP.
 
-The first Phase 5 release adds account-backed cosmetic rewards and set mastery without changing card odds or awarding XP for mastery.
+**Still needed:** choose an email service before enabling email verification or password recovery. Keep manual approval and existing registration abuse controls until that work is ready.
 
-- Track each artwork-complete set by unique card identity, with Explorer (25%), Collector (50%), Archivist (75%), and Master (100%) ranks. Duplicates do not advance mastery.
-- Show per-set mastery emblems, completed-set totals, and account milestones in the private account badge case. Existing collections are backfilled idempotently; imported valid cards count toward mastery without minting XP.
-- Provide an account-synced wardrobe for pack wrappers, card backs, table themes, profile badges, and collection display styles. The server validates every equip request against the player’s unlocked inventory.
-- Apply the selected wrapper, card back, and table theme in the pack opening flow. Offer card-grid, binder-page, and rarity-grouped collection views.
-- Persist the English TCGdex card-ID catalogues used for artwork eligibility and mastery counts. Catalogue refreshes follow the existing 12-hour cache window.
-- Keep all rewards cosmetic. They do not change pull rates, pack contents, or XP.
-- Use original enamel-style badge artwork and motifs; do not copy official game badge designs or assets.
+### Phase 3 — XP, streaks, set unlocks, and God Packs (complete)
 
-The rest of Phase 5 remains future work:
+- Award XP for new cards, pack reveals, first foil/full-art milestones, pack completion, and daily activity.
+- Unlock sets using lifetime XP, with order and XP costs managed in the admin panel.
+- Add more sets only when the full English artwork is available and a pack profile is configured.
+- Offer paid-with-XP God Packs with per-set pricing and rolling limits, plus the rare free God Pack credit.
+- Keep standard pack odds independent of XP, unlocks, and streaks.
 
-- Add duplicate counts and collection statistics by rarity and finish.
-- Add binder page organization and a shareable, read-only collection link with privacy controls.
-- Consider a “surprise me” pack option that selects from sets the player has unlocked.
+### Phase 4 — Daily and weekly goals (future)
 
-Cosmetics and achievements should be the default rewards. Avoid paid boosts or rewards that alter pull rates; rates should remain visible and consistent with each set's stated profile.
+Add optional objectives that give players short-term targets without making daily play feel mandatory.
 
-### Phase 6 — Social features (optional)
+- Examples: reveal a new card, open a pack from a chosen set, or pull a card from a rarity group.
+- Consider weekly goals and a limited streak freeze earned through play.
+- Keep set unlocks and collection progress permanent when a streak ends.
+- Keep rewards bounded so repeated easy actions cannot overwhelm set progression.
+- Streaks currently use the UTC day boundary. Decide whether to keep that rule or move streak rewards to the player’s timezone before implementing more daily goals.
 
-Only pursue this after account sync and privacy controls are established.
+### Phase 5 — Mastery, collection tools, and unlockable artwork (implemented first scope)
 
-- Allow players to compare public collection summaries or share a specific pack opening.
-- Add opt-in leaderboards for collection milestones, not raw pack volume alone.
-- Treat simulated card exchanges as a separate design decision. Trading introduces duplicate ownership, abuse prevention, and fairness concerns, so it should not be required for collection completion.
+- Track per-set mastery from unique card identities and display ranks and milestones.
+- Add the six handover themes, with paired pack/card-back art and achievement-style unlocks:
+  - Vault Classic is available by default.
+  - Ember Forge unlocks after opening 25 packs.
+  - Tidal Depths unlocks after pulling 15 Water-type cards.
+  - Verdant Grove unlocks after opening packs on 7 different local dates.
+  - Storm Circuit unlocks after pulling 5 holo rares.
+  - Eclipse Prism is secret and unlocks after the other five themes.
+- Let players inspect theme unlock progress and select unlocked art from Account customisation.
+- Provide grid, binder, and rarity-grouped collection displays.
 
-## Other ideas to consider
+The former generic cosmetic choices were removed from the Account customisation block in favor of the handover’s pack/card art. Any future cosmetics should extend this theme system deliberately rather than reintroducing overlapping wrapper and card-back styles.
 
-- **Set spotlight:** a rotating set with optional goals and cosmetic rewards, without changing its pull rates.
-- **Personal milestones:** celebrate first card, first rare pull, first complete rarity group, and first finished set.
-- **Pull journal:** searchable history with filters for set, rarity, finish, and date.
-- **Collection completion estimate:** show how many unique cards remain and summarize the rarest uncollected tiers, without promising a number of packs required.
-- **Accessibility options:** reduced animation, skip-to-summary, keyboard operation, and adjustable reveal pacing.
-- **Seasonal cosmetics:** time-limited themes can be earned, while card catalogues and set access remain available after a season ends.
+**Possible later collection improvements:**
 
-## Decisions to make before implementation
+- Track normal, holo, and reverse as separate owned finishes, if finish-level completion is desired. The current collection records card identity; a reveal’s finish is recorded in pack history but does not create separate collection entries.
+- Add duplicate counts and rarity/finish summaries.
+- Add a searchable pull journal with set, rarity, finish, and date filters.
+- Improve the collection completion summary without promising a number of packs needed to finish a set.
+
+### Phase 6 — Accessibility and play quality (future)
+
+- Add an option to reduce or skip pack opening animations and jump to the pull summary.
+- Improve keyboard and screen-reader support for reveal and collection interactions.
+- Offer adjustable reveal pacing and honor reduced-motion settings throughout the pack flow.
+- Consider a “surprise me” option that picks from the player’s unlocked sets.
+
+### Phase 7 — Sharing and social features (optional)
+
+Only pursue social features after privacy controls and account export/deletion expectations are clear.
+
+- Allow a player to share a read-only collection summary or a selected pack opening.
+- Make shared profiles opt-in, with controls to hide email, full name, or selected sets.
+- Consider leaderboards for mastery and collection milestones rather than raw pack volume.
+- Keep simulated trading optional. Trading needs duplicate ownership rules, abuse controls, and fair exchange design; it must not be required to complete a set.
+
+### Phase 8 — Mobile-ready API and app (future)
+
+The progress service already owns the account, collection, pack reveal, progression, and theme state. The current `/api/account/*` routes are an internal web-app contract, however; they are not yet versioned or documented as a mobile API. Build a stable first-party API before starting a mobile client.
+
+**8.1 Define and document the API**
+
+- Add a versioned contract such as `/api/v1/` with an OpenAPI document and consistent error responses.
+- Cover sign-in/profile, eligible sets and catalogue summaries, pack start/reveal, collection/mastery, XP/unlocks, God Pack availability, and selected themes.
+- Add pagination for card/history endpoints and use idempotency keys for operations that may be retried by mobile networks.
+- Keep TCGdex and pricing-provider credentials on the server; the mobile app should call this app’s API, not receive provider secrets.
+
+**8.2 Add native-app authentication**
+
+- Design short-lived access tokens and rotating, revocable refresh tokens for native clients rather than relying on browser cookie behavior.
+- Support per-device session listing and revocation, secure token storage, logout, and account suspension consistently with the web app.
+- Decide on password recovery and email verification delivery before relying on email as the only recovery method.
+- Add API-specific rate limits and audit events for authentication and progression changes.
+
+**8.3 Build a small mobile release**
+
+- Consider Expo/React Native to share TypeScript types and selected presentation logic with the existing React app.
+- Start with sign-in, set progression, opening packs, collection/mastery, and choosing unlocked themes.
+- Treat pack results and XP as server-authoritative. Cache read-only catalogue and collection views for responsiveness, but require connectivity for pack reveals and progression changes.
+- Add push notifications only as an opt-in follow-up; do not make notifications or daily attendance necessary for progression.
+- Release to a small beta, validate account/session and migration behavior, then prepare store listings and support/privacy information.
+
+This should initially be a private API for the first-party app, not an unrestricted public developer API. A public API would need separate quotas, keys, terms, and support commitments.
+
+## Decisions before future work
 
 1. Should normal, holo, and reverse finishes count as separate collection entries?
-2. Should the daily streak reset remain at 00:00 UTC or follow the player's local timezone?
-3. Which email service should be used for verification and password recovery?
-4. Which additional sets have complete image references and sufficiently sourced pull-rate profiles to add?
+2. Should streak rewards continue to reset at 00:00 UTC?
+3. Which email provider should handle verification and password recovery?
+4. For a mobile app, should the first release be Expo/React Native, and which platforms are in scope?
+5. Should collection sharing be public-by-link, invite-only, or omitted from the first social release?
 
-## First progression release (implemented)
+## Guardrails
 
-The first progression release includes account-backed progress, an explicit guest collection merge, XP rewards, daily streaks, artwork-eligible sets, lifetime XP unlock thresholds, and configurable per-set XP-purchased God Packs. More sets can be added by adding a sourced pack profile and its unlock threshold. Standard pack pull odds remain independent of XP, streaks, and unlock state.
+- Keep pull rates visible and independent of XP, collection status, streaks, and cosmetics.
+- Do not make paid currency, real-money purchases, or trading necessary for collection progress.
+- Keep newly introduced sets limited to verified artwork-complete catalogues and sourced pack profiles.
+- Preserve account and collection data across routine deployments; back up the SQLite volume before schema changes or migrations.
+- Keep this clearly identified as a fan-made digital simulator, not physical-card ownership or an official Pokémon product.
