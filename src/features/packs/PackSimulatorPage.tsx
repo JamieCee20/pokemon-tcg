@@ -153,6 +153,7 @@ function CollectionRoadmap({
   disabled: boolean;
   onDisplayChange: (id: string) => void;
 }) {
+  const [binderPage, setBinderPage] = useState(0);
   const collectedCount = cards.filter((card) =>
     collectedIds.has(card.id),
   ).length;
@@ -164,6 +165,17 @@ function CollectionRoadmap({
           (group) => group.cards,
         )
       : cards;
+  const binderPageCount = Math.max(1, Math.ceil(displayCards.length / 9));
+  const activeBinderPage = Math.min(binderPage, binderPageCount - 1);
+  const firstBinderCard = activeBinderPage * 9;
+  const pageCards =
+    displayStyle === "binder"
+      ? displayCards.slice(firstBinderCard, firstBinderCard + 9)
+      : displayCards;
+
+  useEffect(() => {
+    setBinderPage(0);
+  }, [displayStyle, setName]);
 
   return (
     <section
@@ -186,7 +198,10 @@ function CollectionRoadmap({
               aria-label="Collection display style"
               value={displayId}
               disabled={disabled}
-              onChange={(event) => onDisplayChange(event.target.value)}
+              onChange={(event) => {
+                setBinderPage(0);
+                onDisplayChange(event.target.value);
+              }}
             >
               {displayChoices.map((choice) => (
                 <option key={choice.id} value={choice.id}>
@@ -207,13 +222,45 @@ function CollectionRoadmap({
       >
         <span style={{ width: `${progress}%` }} />
       </div>
+      {displayStyle === "binder" && (
+        <div className="pack-binder-controls" aria-label="Binder page controls">
+          <button
+            className="pack-button pack-button--secondary"
+            type="button"
+            disabled={activeBinderPage === 0}
+            onClick={() => setBinderPage((page) => Math.max(0, page - 1))}
+          >
+            Previous page
+          </button>
+          <span aria-live="polite">
+            Page {activeBinderPage + 1} of {binderPageCount}
+            {displayCards.length > 0 && (
+              <> · Cards {firstBinderCard + 1}–{firstBinderCard + pageCards.length} of {displayCards.length}</>
+            )}
+          </span>
+          <button
+            className="pack-button pack-button--secondary"
+            type="button"
+            disabled={activeBinderPage + 1 >= binderPageCount}
+            onClick={() =>
+              setBinderPage((page) => Math.min(binderPageCount - 1, page + 1))
+            }
+          >
+            Next page
+          </button>
+        </div>
+      )}
       <div
         className="pack-collection__grid"
         data-display={displayStyle}
         role="list"
-        aria-label={`${setName} cards`}
+        aria-label={
+          displayStyle === "binder"
+            ? `${setName} binder page ${activeBinderPage + 1}`
+            : `${setName} cards`
+        }
       >
-        {displayCards.map((card) => {
+        {pageCards.map((card) => {
           const collected = collectedIds.has(card.id);
           const imageUrl = card.image ? cardImageUrl(card.image, "low") : null;
           return (
@@ -251,6 +298,14 @@ function CollectionRoadmap({
             </article>
           );
         })}
+        {displayStyle === "binder" &&
+          Array.from({ length: 9 - pageCards.length }, (_, index) => (
+            <div
+              className="pack-binder-pocket pack-binder-pocket--empty"
+              key={`empty-${activeBinderPage}-${index}`}
+              aria-hidden="true"
+            />
+          ))}
       </div>
     </section>
   );

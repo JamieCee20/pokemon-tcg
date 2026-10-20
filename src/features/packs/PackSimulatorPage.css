@@ -1193,26 +1193,78 @@
 }
 
 .pack-collection__grid[data-display="binder"] {
-  grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+  position: relative;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px 12px;
-  padding: 12px;
-  border: 1px solid rgb(225 215 185 / 15%);
+  width: min(100%, 720px);
+  margin-inline: auto;
+  padding: 18px 18px 18px 40px;
+  border: 1px solid rgb(225 215 185 / 36%);
   border-radius: 11px;
   background:
+    linear-gradient(90deg, #111a19 0 28px, transparent 28px),
     repeating-linear-gradient(
-      90deg,
-      transparent 0 29px,
-      rgb(255 255 255 / 3%) 29px 30px
+      0deg,
+      transparent 0 32px,
+      rgb(255 255 255 / 2%) 32px 33px
     ),
-    linear-gradient(145deg, #2b3b37, #202b29);
+    linear-gradient(145deg, #344943, #202b29 72%);
+  box-shadow:
+    inset 0 0 0 4px rgb(255 255 255 / 3%),
+    0 12px 26px rgb(0 0 0 / 18%);
+}
+
+.pack-collection__grid[data-display="binder"]::before {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 8px;
+  width: 12px;
+  border-radius: 999px;
+  background: radial-gradient(
+      circle at 50% 16px,
+      #c7b783 0 2px,
+      #101715 2.5px 5px,
+      transparent 5.5px
+    )
+    repeat-y;
+  background-size: 12px 42px;
+  content: "";
+  pointer-events: none;
 }
 
 .pack-collection__grid[data-display="binder"] .pack-collection-card {
   padding: 5px;
-  border-color: rgb(235 216 166 / 30%);
-  border-radius: 7px 10px 10px 7px;
-  background: linear-gradient(90deg, rgb(231 211 159 / 16%) 0 4px, #17201f 4px);
-  box-shadow: 1px 3px 7px rgb(0 0 0 / 24%);
+  border-color: rgb(235 216 166 / 42%);
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, rgb(231 211 159 / 15%) 0 4px, transparent 4px),
+    linear-gradient(145deg, #182320, #111917);
+  box-shadow:
+    inset 0 0 0 2px rgb(255 255 255 / 3%),
+    1px 4px 8px rgb(0 0 0 / 30%);
+}
+
+.pack-binder-controls {
+  display: flex;
+  width: min(100%, 720px);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 auto 11px;
+}
+
+.pack-binder-controls > span {
+  color: var(--color-muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.pack-binder-pocket--empty {
+  min-height: clamp(145px, 24vw, 300px);
+  border: 1px dashed rgb(235 216 166 / 22%);
+  border-radius: 6px;
+  background: rgb(8 13 11 / 25%);
 }
 
 .pack-collection-card {
@@ -1579,6 +1631,26 @@
 
   .pack-collection__display {
     flex: 1 1 145px;
+  }
+
+  .pack-binder-controls {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .pack-binder-controls > span {
+    flex: 1 0 100%;
+    order: -1;
+  }
+
+  .pack-collection__grid[data-display="binder"] {
+    gap: 8px;
+    padding: 12px 10px 12px 30px;
+  }
+
+  .pack-collection__grid[data-display="binder"]::before {
+    left: 5px;
+    width: 10px;
   }
 }
 
