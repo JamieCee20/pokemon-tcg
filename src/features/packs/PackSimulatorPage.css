@@ -899,6 +899,35 @@
   animation: pack-deal-on-table 520ms cubic-bezier(0.2, 0.8, 0.25, 1) both;
 }
 
+.pack-table-card.is-new {
+  border-color: #f6d47e;
+  box-shadow:
+    0 0 0 2px rgb(246 212 126 / 30%),
+    0 7px 16px rgb(0 0 0 / 34%),
+    0 0 17px rgb(246 212 126 / 24%);
+}
+
+.pack-table-card__new-badge {
+  position: absolute;
+  z-index: 2;
+  top: 5px;
+  right: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 5px;
+  border: 1px solid rgb(255 244 205 / 86%);
+  border-radius: 999px;
+  background: linear-gradient(145deg, #ffe89c, #e2ad40);
+  color: #34230a;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.045em;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 45%);
+  pointer-events: none;
+}
+
 .pack-table-card .pack-card__front {
   opacity: 1;
   transform: none;

@@ -193,12 +193,20 @@ function RevealedCard({
   );
 }
 
-function DealtCard({ card, index }: { card: PackCard; index: number }) {
+function DealtCard({
+  card,
+  index,
+  isNew,
+}: {
+  card: PackCard;
+  index: number;
+  isNew: boolean;
+}) {
   return (
     <div
-      className={`pack-table-card pack-card--${card.finish !== "normal" ? card.finish : "normal"} pack-card--${card.rarity}`}
+      className={`pack-table-card pack-card--${card.finish !== "normal" ? card.finish : "normal"} pack-card--${card.rarity}${isNew ? " is-new" : ""}`}
       role="listitem"
-      aria-label={`${card.name}, ${rarityLabel(card.rarity)}`}
+      aria-label={`${card.name}, ${rarityLabel(card.rarity)}${isNew ? ", new card collected in this pack" : ""}`}
       style={{ animationDelay: `${index * 75}ms` }}
     >
       <div className="pack-card__front">
@@ -217,6 +225,11 @@ function DealtCard({ card, index }: { card: PackCard; index: number }) {
         )}
         <div className="pack-card__foil" aria-hidden="true" />
       </div>
+      {isNew && (
+        <span className="pack-table-card__new-badge" aria-hidden="true">
+          <span aria-hidden="true">★</span> NEW
+        </span>
+      )}
     </div>
   );
 }
@@ -249,6 +262,11 @@ export function PackSimulatorPage() {
   const [packsOpened, setPacksOpened] = useState(0);
   const [collection, setCollection] =
     useState<Record<string, string[]>>(readPackCollection);
+  const [newlyCollectedPositions, setNewlyCollectedPositions] = useState<
+    Set<number>
+  >(() => new Set());
+  const collectionAtPackStart = useRef<Set<string>>(new Set());
+  const seenPackCardIds = useRef<Set<string>>(new Set());
   const openTimeout = useRef<number | null>(null);
   const sendTimeout = useRef<number | null>(null);
   const progressRequestInFlight = useRef(false);
@@ -426,6 +444,9 @@ export function PackSimulatorPage() {
       packType === "god"
         ? createGodPack(catalogue)
         : createPack(catalogue);
+    collectionAtPackStart.current = new Set(collectedIds);
+    seenPackCardIds.current = new Set();
+    setNewlyCollectedPositions(new Set());
     setOpenedPackType(packType);
     setOpening(true);
     setProgressError("");
@@ -544,6 +565,16 @@ export function PackSimulatorPage() {
       return;
     if (!currentFaceUp) {
       if (currentCard && currentCard.rarity !== "energy") {
+        const alreadyCollected = collectionAtPackStart.current.has(
+          currentCard.id,
+        );
+        const alreadySeenInPack = seenPackCardIds.current.has(currentCard.id);
+        seenPackCardIds.current.add(currentCard.id);
+        if (!alreadyCollected && !alreadySeenInPack) {
+          setNewlyCollectedPositions((previous) =>
+            new Set(previous).add(revealed),
+          );
+        }
         setCollection((previous) => {
           const existing = previous[selectedSetId] ?? [];
           if (existing.includes(currentCard.id)) return previous;
@@ -588,6 +619,9 @@ export function PackSimulatorPage() {
     setOpenedPackType("standard");
     setPackSessionId(null);
     setRevealed(0);
+    setNewlyCollectedPositions(new Set());
+    collectionAtPackStart.current = new Set();
+    seenPackCardIds.current = new Set();
     setDecodedArtwork(new Set());
     setCurrentFaceUp(false);
     setMovingToBack(false);
@@ -931,6 +965,7 @@ export function PackSimulatorPage() {
                   key={`${packsOpened}-${index}-${card.id}`}
                   card={card}
                   index={index}
+                  isNew={newlyCollectedPositions.has(index)}
                 />
               ))}
             </div>
