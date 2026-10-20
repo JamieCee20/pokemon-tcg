@@ -142,11 +142,14 @@ export function AdminPage() {
           setId: set.setId,
           xpCost: set.xpCost,
           sortOrder: set.sortOrder,
+          godPackXpCost: set.godPackXpCost,
+          godPackLimit: set.godPackLimit,
+          godPackWindowDays: set.godPackWindowDays,
         })),
       );
       setSetDrafts(saved);
       await refreshAdminData();
-      setMessage("Set order and unlock costs saved.");
+      setMessage("Set progression and God Pack settings saved.");
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -192,7 +195,10 @@ export function AdminPage() {
         <div>
           <p className="eyebrow">CEE’S CARD VAULT · ADMIN</p>
           <h1>Administration</h1>
-          <p>Approve accounts, manage XP, and set pack unlock requirements.</p>
+          <p>
+            Approve accounts, manage available XP, and set lifetime XP unlock
+            thresholds.
+          </p>
         </div>
         <Link to="/account">Back to account</Link>
       </header>
@@ -261,7 +267,7 @@ export function AdminPage() {
                   <tr>
                     <th>Player</th>
                     <th>Status</th>
-                    <th>XP</th>
+                    <th>Available XP</th>
                     <th>Collection</th>
                     <th>Account actions</th>
                   </tr>
@@ -284,10 +290,10 @@ export function AdminPage() {
                           {statusLabel(user.status)}
                         </span>
                       </td>
-                      <td data-label="XP">
+                      <td data-label="Available XP">
                         <div className="admin-xp-control">
                           <input
-                            aria-label={`XP for ${user.email}`}
+                            aria-label={`Available XP for ${user.email}`}
                             min="0"
                             max="1000000"
                             step="1"
@@ -391,7 +397,7 @@ export function AdminPage() {
           <div className="account-section-heading">
             <div>
               <p className="eyebrow">SET PROGRESSION</p>
-              <h2>Unlock costs and order</h2>
+              <h2>Set progression and God Packs</h2>
             </div>
             <button
               className="pack-button"
@@ -403,8 +409,11 @@ export function AdminPage() {
             </button>
           </div>
           <p className="account-muted">
-            Lower order numbers appear first. Costs and order are saved in the
-            account database and apply without rebuilding the app.
+            Lower order numbers appear first. Unlock thresholds use lifetime
+            XP. God Pack limits apply separately to each set over a rolling
+            period, so 2 packs per 1 day allows two opens in any 24-hour window.
+            Settings are saved in the account database and apply without
+            rebuilding the app.
           </p>
           {setsQuery.isPending ? (
             <p className="account-muted">Loading configured sets…</p>
@@ -445,7 +454,7 @@ export function AdminPage() {
                       />
                     </label>
                     <label>
-                      Unlock XP
+                      Lifetime XP threshold
                       <input
                         min="0"
                         max="1000000"
@@ -459,6 +468,72 @@ export function AdminPage() {
                                 ? {
                                     ...item,
                                     xpCost: Number(event.target.value),
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      God Pack price (XP)
+                      <input
+                        min="0"
+                        max="1000000"
+                        step="1"
+                        type="number"
+                        value={set.godPackXpCost}
+                        onChange={(event) =>
+                          setSetDrafts((current) =>
+                            current.map((item) =>
+                              item.setId === set.setId
+                                ? {
+                                    ...item,
+                                    godPackXpCost: Number(event.target.value),
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Packs per period
+                      <input
+                        min="1"
+                        max="100"
+                        step="1"
+                        type="number"
+                        value={set.godPackLimit}
+                        onChange={(event) =>
+                          setSetDrafts((current) =>
+                            current.map((item) =>
+                              item.setId === set.setId
+                                ? {
+                                    ...item,
+                                    godPackLimit: Number(event.target.value),
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Period (days)
+                      <input
+                        min="1"
+                        max="3650"
+                        step="1"
+                        type="number"
+                        value={set.godPackWindowDays}
+                        onChange={(event) =>
+                          setSetDrafts((current) =>
+                            current.map((item) =>
+                              item.setId === set.setId
+                                ? {
+                                    ...item,
+                                    godPackWindowDays: Number(event.target.value),
                                   }
                                 : item,
                             ),

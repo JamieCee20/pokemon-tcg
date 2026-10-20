@@ -178,7 +178,7 @@
 
 .admin-set-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 100px 150px;
+  grid-template-columns: minmax(150px, 1fr) 75px 125px 120px 100px 100px;
   align-items: center;
   gap: 12px;
   padding: 10px 0;
@@ -291,8 +291,12 @@
   }
 
   .admin-set-row {
-    grid-template-columns: minmax(0, 1fr) 80px 120px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
+  }
+
+  .admin-set-row > div {
+    grid-column: 1 / -1;
   }
 }
 

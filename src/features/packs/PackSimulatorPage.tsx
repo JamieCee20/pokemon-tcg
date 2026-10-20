@@ -12,8 +12,10 @@ import {
 } from "../account/api";
 import {
   createPack,
+  createGodPack,
   loadPackCatalogue,
   DEFAULT_PACK_PROFILE,
+  GOD_PACK_RARITIES,
   PACK_PROFILES,
   rarityLabel,
 } from "./packData";
@@ -23,6 +25,12 @@ import "./PackSimulatorPage.css";
 
 function compareCardNumbers(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true });
+}
+
+const GOD_PACK_RARITY_SET: ReadonlySet<string> = new Set(GOD_PACK_RARITIES);
+
+function godPackPeriodLabel(days: number): string {
+  return `${days} day${days === 1 ? "" : "s"}`;
 }
 
 function CollectionRoadmap({
@@ -219,6 +227,9 @@ export function PackSimulatorPage() {
     DEFAULT_PACK_PROFILE.setId,
   );
   const [pack, setPack] = useState<PackCard[] | null>(null);
+  const [openedPackType, setOpenedPackType] = useState<"standard" | "god">(
+    "standard",
+  );
   const [packSessionId, setPackSessionId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(0);
   const [decodedArtwork, setDecodedArtwork] = useState<Set<string>>(
@@ -301,6 +312,38 @@ export function PackSimulatorPage() {
     isSelectedSetUnlocked &&
     selectedSetAvailable &&
     allCardArtworkPresent;
+  const godPackPoolSize = catalogue
+    ? new Set(
+        profile.rates
+          .filter((rate) => GOD_PACK_RARITY_SET.has(rate.rarity))
+          .flatMap((rate) => catalogue.cards[rate.rarity] ?? [])
+          .map((card) => card.id),
+      ).size
+    : 0;
+  const godPackXpCost = selectedSetAvailability?.godPackXpCost ?? 1_000;
+  const godPackLimit = selectedSetAvailability?.godPackLimit ?? 1;
+  const godPackWindowDays = selectedSetAvailability?.godPackWindowDays ?? 7;
+  const godPackStatus = account?.progression.godPack[selectedSetId];
+  const godPackRemaining = godPackStatus?.remaining ?? godPackLimit;
+  const canOpenGodPack =
+    account !== null &&
+    canOpenSelectedSet &&
+    godPackPoolSize > 0 &&
+    godPackRemaining > 0 &&
+    account.progression.xp >= godPackXpCost;
+  const godPackButtonLabel = opening
+    ? openedPackType === "god"
+      ? "Preparing God Pack…"
+      : "Opening pack…"
+    : godPackRemaining <= 0
+      ? "God Pack limit reached for this set"
+      : !catalogue
+        ? "Checking God Pack pool…"
+        : godPackPoolSize === 0
+          ? "No IR+ cards in this set"
+          : (account?.progression.xp ?? 0) < godPackXpCost
+            ? `God Pack · ${godPackXpCost.toLocaleString()} XP needed`
+            : `Open God Pack · ${godPackXpCost.toLocaleString()} XP`;
   const eligibleProfiles = PACK_PROFILES.filter((candidate) =>
     setAvailabilityQuery.data
       ? availableSetMap.get(candidate.setId)?.available !== false
@@ -371,11 +414,16 @@ export function PackSimulatorPage() {
     setAvailabilityQuery.data,
   ]);
 
-  async function openPack() {
+  async function openPack(packType: "standard" | "god" = "standard") {
     if (!catalogue || !canOpenSelectedSet || opening || savingProgress) return;
+    if (packType === "god" && !canOpenGodPack) return;
     if (openTimeout.current !== null) window.clearTimeout(openTimeout.current);
     if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
-    const nextPack = createPack(catalogue);
+    const nextPack =
+      packType === "god"
+        ? createGodPack(catalogue)
+        : createPack(catalogue);
+    setOpenedPackType(packType);
     setOpening(true);
     setProgressError("");
     setProgressMessage("");
@@ -383,10 +431,18 @@ export function PackSimulatorPage() {
     let nextSessionId: string | null = null;
     if (account) {
       try {
-        const session = await startPackSession(selectedSetId, nextPack.length);
+        const session = await startPackSession(
+          selectedSetId,
+          nextPack.length,
+          packType,
+        );
         nextSessionId = session.packId;
         setAccount(session.account);
-        if (session.dailyReward.claimed) {
+        if (packType === "god") {
+          setProgressMessage(
+            `God Pack purchased for ${godPackXpCost.toLocaleString()} XP · ${godPackLimit} per ${godPackPeriodLabel(godPackWindowDays)}`,
+          );
+        } else if (session.dailyReward.claimed) {
           setProgressMessage(
             `Daily streak · +${session.dailyReward.xp} XP · day ${session.dailyReward.streakDays}`,
           );
@@ -518,6 +574,7 @@ export function PackSimulatorPage() {
     if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
     setSelectedSetId(setId);
     setPack(null);
+    setOpenedPackType("standard");
     setPackSessionId(null);
     setRevealed(0);
     setDecodedArtwork(new Set());
@@ -545,9 +602,9 @@ export function PackSimulatorPage() {
             <Link
               className="pack-page-heading__xp"
               to="/account"
-              aria-label={`${account.progression.xp} XP. Open account settings.`}
+              aria-label={`${account.progression.xp} available XP. ${account.progression.lifetimeXp} lifetime XP. Open account settings.`}
             >
-              <span>YOUR XP</span>
+              <span>AVAILABLE XP</span>
               <strong>
                 {account.progression.xp.toLocaleString()} <small>XP</small>
               </strong>
@@ -650,7 +707,7 @@ export function PackSimulatorPage() {
                       {option.name}
                       {!unlocked
                         ? account
-                          ? ` · ${availability?.xpCost ?? 0} XP to unlock`
+                          ? ` · ${availability?.xpCost ?? 0} lifetime XP to unlock`
                           : " · sign in to unlock"
                         : ""}
                     </option>
@@ -755,18 +812,53 @@ export function PackSimulatorPage() {
 
           <div className="pack-simulator__actions">
             {!pack || allRevealed ? (
-              <button
-                className="pack-button"
-                type="button"
-                disabled={!canOpenSelectedSet || opening || savingProgress}
-                onClick={() => void openPack()}
-              >
-                {opening
-                  ? "Opening pack…"
-                  : allRevealed
-                    ? "Open another pack"
-                    : "Tear open pack"}
-              </button>
+              <>
+                <button
+                  className="pack-button"
+                  type="button"
+                  disabled={!canOpenSelectedSet || opening || savingProgress}
+                  onClick={() => void openPack("standard")}
+                >
+                  {opening
+                    ? "Opening pack…"
+                    : allRevealed
+                      ? "Open another pack"
+                      : "Tear open pack"}
+                </button>
+                <div className="pack-god-pack-offer">
+                  {account ? (
+                    <button
+                      className="pack-button pack-button--god"
+                      type="button"
+                      disabled={!canOpenGodPack || opening || savingProgress}
+                      onClick={() => void openPack("god")}
+                    >
+                      {godPackButtonLabel}
+                    </button>
+                  ) : (
+                    <Link
+                      className="pack-button pack-button--god"
+                      to="/account"
+                    >
+                      Sign in for a God Pack
+                    </Link>
+                  )}
+                  <span>
+                    Energy first, then IR-or-higher pulls at the set's observed
+                    rarity rates. Cards already in your collection can appear
+                    again. This set allows {godPackLimit} per{" "}
+                    {godPackPeriodLabel(godPackWindowDays)} in a rolling window.
+                    {godPackStatus?.availableAt && (
+                      <>
+                        {" "}
+                        Next available {new Date(
+                          godPackStatus.availableAt,
+                        ).toLocaleString()}.
+                      </>
+                    )}
+                  </span>
+                </div>
+              </>
             ) : (
               <button
                 className="pack-button"
@@ -805,7 +897,9 @@ export function PackSimulatorPage() {
         <section className="pack-reveal" aria-label="Pack contents">
           <div className="pack-reveal__heading">
             <div>
-              <p className="eyebrow">PACK {packsOpened}</p>
+              <p className="eyebrow">
+                {openedPackType === "god" ? "GOD PACK" : `PACK ${packsOpened}`}
+              </p>
               <h2>{allRevealed ? "Your pulls" : "Card stack"}</h2>
             </div>
             <span>
@@ -825,7 +919,9 @@ export function PackSimulatorPage() {
           )}
           <p className="pack-reveal__hint">
             {allRevealed
-              ? "The card list is from TCGdex. Your pulls were revealed from lower to higher rarity."
+              ? openedPackType === "god"
+                ? "Your God Pack kept energy first and filled every other slot with an IR-or-higher card at the set's observed rarity rates. Previously collected cards can appear again."
+                : "The card list is from TCGdex. Your pulls were revealed from lower to higher rarity."
               : currentFaceUp
                 ? "Click the face-up card to sweep it over the stack and place it at the back. The next card will be waiting face-down."
                 : "Click the top card or use the button to flip it over. The rarer pulls are saved for last."}

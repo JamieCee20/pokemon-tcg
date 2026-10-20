@@ -35,9 +35,9 @@ Run `npm run dev:progress` in a second terminal to use accounts and XP locally. 
 - Set pages can sort card numbers in either direction or sort by TCGplayer market price or Cardmarket near-mint price. Price sorting uses the provider's batch lookup in groups of at most 20 cards; cards without a matching price stay at the end.
 - The separate APITCG explorer previews product images, card and set details, TCGplayer printing prices, and raw product records. Searches use the server proxy and its persistent 24-hour cache and daily request cap.
 - Favourites store card IDs separately for each selected language in local storage. Their records are resolved with a four-request concurrency cap; IDs remain removable when a card is unavailable.
-- The pack simulator supports guest openings of the starter set and email/password accounts with ULID user IDs, an optional preset avatar, synced collection progress, XP, daily streaks, and XP-unlocked sets. XP is awarded for a pack's first reveal, a newly collected card, the account's first foil and first full-art pull, completed packs, and daily streak activity. Set unlocking costs XP.
+- The pack simulator supports guest openings of the starter set and email/password accounts with ULID user IDs, an optional preset avatar, synced collection progress, XP, daily streaks, and XP-unlocked sets. XP is awarded for a pack's first reveal, a newly collected card, the account's first foil and first full-art pull, completed packs, and daily streak activity. Lifetime XP unlocks sets without spending the available XP balance. Available XP can buy energy-first God Packs; every other card is IR or higher. Administrators configure each set's price and its pack limit over a rolling number of days.
 - The account API checks the English TCGdex set records before offering a pack set. Sets are available only when every card record (including any bonus subset) contains a TCGdex image URL.
-- `config/pack-sets.json` defines available pack sets, default XP costs, pack size, and pack data. The account database stores admin-managed XP costs and display order, which the pack and account pages fetch from the API; the next unlock still depends on XP rather than completing the previous set.
+- `config/pack-sets.json` defines available pack sets, default lifetime XP thresholds, pack size, and pack data. The account database stores admin-managed unlock thresholds, display order, and per-set God Pack prices and rolling limits, which the pack and account pages fetch from the API. Initial God Pack prices follow the set order and rise every three positions; administrators can then set each price and limit independently in the admin panel.
 
 ## Structure
 
@@ -123,7 +123,7 @@ The admin page is available at `/#/admin` to administrator accounts. `jamiecee20
 
 Account registration uses email and IP rate limits plus a honeypot field. Email addresses are format-checked but not verified. The app's Nginx forwards `X-Real-IP` to the account API, so the outer reverse proxy must set that header to the visitor address. If the DNS record is Cloudflare-proxied, configure Nginx's real-IP module to trust Cloudflare's published IP ranges and use `CF-Connecting-IP`; do not trust that header from arbitrary clients. See [Cloudflare's Nginx real-IP guidance](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/).
 
-The next progress API deployment applies a one-time progression reset to existing accounts: XP and paid set unlocks are cleared, the first configured set is re-unlocked, and one-time XP achievement flags are reset. Saved card collections, streak state, accounts, passwords, and sessions are retained.
+The progression reset has already been applied to existing accounts: XP and paid set unlocks were cleared, the first configured set was re-unlocked, and one-time XP achievement flags were reset. A later migration initializes lifetime XP from current XP and previously unlocked set thresholds. Saved card collections, streak state, accounts, passwords, and sessions are retained.
 
 ## Deploy with Docker on a server
 

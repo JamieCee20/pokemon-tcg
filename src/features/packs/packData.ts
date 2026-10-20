@@ -24,6 +24,21 @@ export type PackRarity =
 export type PackFinish = "normal" | "holo" | "reverse";
 type PackPullSlot = "bonus" | "rare" | "anniversary";
 
+export const GOD_PACK_RARITIES = [
+  "illustrationRare",
+  "ultraRare",
+  "shinyUltraRare",
+  "megaAttackRare",
+  "specialIllustrationRare",
+  "hyperRare",
+  "megaHyperRare",
+  "blackWhiteRare",
+  "futureRare",
+] as const satisfies readonly PackRarity[];
+const GOD_PACK_RARITY_SET: ReadonlySet<PackRarity> = new Set(
+  GOD_PACK_RARITIES,
+);
+
 export interface PackRate {
   rarity: Exclude<PackRarity, "common" | "uncommon" | "rare" | "pikachu">;
   percent: number;
@@ -33,6 +48,7 @@ export interface PackRate {
 
 export interface PackProfile {
   setId: string;
+  cardsPerPack: number;
   name: string;
   code: string;
   seriesLabel: string;
@@ -46,9 +62,11 @@ export interface PackProfile {
   rateNote: string;
 }
 
+type PackProfileDefinition = Omit<PackProfile, "cardsPerPack">;
+
 const pullnomicsSource = "https://pullnomics.com/pull-rates";
 
-const PACK_PROFILE_DATA: PackProfile[] = [
+const PACK_PROFILE_DATA: PackProfileDefinition[] = [
   {
     setId: "sv03.5",
     name: "Scarlet & Violet—151",
@@ -726,9 +744,10 @@ const packProfilesBySetId = new Map(
   PACK_PROFILE_DATA.map((profile) => [profile.setId, profile]),
 );
 
-export const PACK_PROFILES: PackProfile[] = packSetConfig
-  .map((set) => packProfilesBySetId.get(set.id))
-  .filter((profile): profile is PackProfile => profile !== undefined);
+export const PACK_PROFILES: PackProfile[] = packSetConfig.flatMap((set) => {
+    const profile = packProfilesBySetId.get(set.id);
+    return profile ? [{ ...profile, cardsPerPack: set.cardsPerPack }] : [];
+  });
 
 export const DEFAULT_PACK_PROFILE = PACK_PROFILES[0]!;
 
@@ -1092,6 +1111,49 @@ export function createPack(catalogue: PackCatalogue): PackCard[] {
     } else {
       addCard(pack, pools.rare, used, "rare", "holo");
     }
+  }
+
+  return pack.sort((left, right) => revealOrder(left) - revealOrder(right));
+}
+
+export function createGodPack(
+  catalogue: PackCatalogue,
+): PackCard[] {
+  type GodPackRarity = (typeof GOD_PACK_RARITIES)[number];
+  const eligibleRates = catalogue.profile.rates.filter(
+    (rate): rate is PackRate & { rarity: GodPackRarity } =>
+      GOD_PACK_RARITY_SET.has(rate.rarity) &&
+      (catalogue.cards[rate.rarity]?.length ?? 0) > 0,
+  );
+  if (eligibleRates.length === 0) {
+    throw new Error(
+      "This set has no eligible IR-or-higher cards for a God Pack.",
+    );
+  }
+
+  const pack: PackCard[] = [
+    createEnergy(catalogue, catalogue.profile.foilEnergyPercent),
+  ];
+  const usedIds = new Set<string>();
+  const premiumSlots = Math.max((catalogue.profile.cardsPerPack ?? 11) - 1, 1);
+  const totalWeight = eligibleRates.reduce((sum, rate) => sum + rate.percent, 0);
+
+  for (let position = 0; position < premiumSlots; position += 1) {
+    let roll = Math.random() * totalWeight;
+    let selectedRarity = eligibleRates[0]!.rarity;
+    for (const rate of eligibleRates) {
+      roll -= rate.percent;
+      if (roll < 0) {
+        selectedRarity = rate.rarity;
+        break;
+      }
+    }
+    const rarityPool = catalogue.cards[selectedRarity] ?? [];
+    const unusedCards = rarityPool.filter((card) => !usedIds.has(card.id));
+    const cardPool = unusedCards.length > 0 ? unusedCards : rarityPool;
+    const selected = cardPool[Math.floor(Math.random() * cardPool.length)]!;
+    usedIds.add(selected.id);
+    pack.push({ ...selected, rarity: selectedRarity, finish: "holo" });
   }
 
   return pack.sort((left, right) => revealOrder(left) - revealOrder(right));

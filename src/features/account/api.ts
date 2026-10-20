@@ -14,6 +14,17 @@ export interface AccountAchievement {
 
 export interface AccountProgression {
   xp: number;
+  lifetimeXp: number;
+  godPack: Record<
+    string,
+    {
+      limit: number;
+      windowDays: number;
+      openedInWindow: number;
+      remaining: number;
+      availableAt: string | null;
+    }
+  >;
   streakDays: number;
   lastActivityDate: string | null;
   unlockedSets: AccountUnlock[];
@@ -38,6 +49,9 @@ export interface PackSetAvailability {
   setId: string;
   name: string;
   xpCost: number;
+  godPackXpCost: number;
+  godPackLimit: number;
+  godPackWindowDays: number;
   available: boolean | null;
   sortOrder: number;
 }
@@ -65,6 +79,9 @@ export interface AdminPackSet {
   name: string;
   xpCost: number;
   sortOrder: number;
+  godPackXpCost: number;
+  godPackLimit: number;
+  godPackWindowDays: number;
   available: boolean | null;
 }
 
@@ -231,6 +248,7 @@ export async function unlockPackSet(setId: string): Promise<AccountData> {
 export async function startPackSession(
   setId: string,
   totalCards: number,
+  packType: "standard" | "god" = "standard",
 ): Promise<{
   packId: string;
   account: AccountData;
@@ -238,7 +256,7 @@ export async function startPackSession(
 }> {
   return request("/packs/start", {
     method: "POST",
-    body: JSON.stringify({ setId, totalCards }),
+    body: JSON.stringify({ setId, totalCards, packType }),
   });
 }
 
@@ -292,16 +310,52 @@ export async function updateAdminUserXp(
 
 export async function getAdminSets(): Promise<AdminPackSet[]> {
   const response = await request<{ sets: AdminPackSet[] }>("/admin/sets");
-  return response.sets;
+  return response.sets.map((set) => ({
+    ...set,
+    godPackXpCost: Number.isInteger(set.godPackXpCost)
+      ? set.godPackXpCost
+      : 1_000,
+    godPackLimit: Number.isInteger(set.godPackLimit) ? set.godPackLimit : 1,
+    godPackWindowDays: Number.isInteger(set.godPackWindowDays)
+      ? set.godPackWindowDays
+      : 7,
+  }));
 }
 
 export async function saveAdminSets(
-  sets: Pick<AdminPackSet, "setId" | "xpCost" | "sortOrder">[],
+  sets: Pick<
+    AdminPackSet,
+    | "setId"
+    | "xpCost"
+    | "sortOrder"
+    | "godPackXpCost"
+    | "godPackLimit"
+    | "godPackWindowDays"
+  >[],
 ): Promise<AdminPackSet[]> {
   const response = await request<{ sets: AdminPackSet[] }>("/admin/sets", {
     method: "PUT",
     body: JSON.stringify({ sets }),
   });
+  const savedById = new Map(response.sets.map((set) => [set.setId, set]));
+  const settingsWereSaved = sets.every((set) => {
+    const saved = savedById.get(set.setId);
+    if (!saved) return false;
+    return (
+      saved.xpCost === set.xpCost &&
+      saved.sortOrder === set.sortOrder &&
+      saved.godPackXpCost === set.godPackXpCost &&
+      saved.godPackLimit === set.godPackLimit &&
+      saved.godPackWindowDays === set.godPackWindowDays
+    );
+  });
+  if (!settingsWereSaved) {
+    throw new AccountApiError(
+      "The account service did not confirm these God Pack settings. Rebuild or restart the progress-api service, then save again.",
+      "god_pack_settings_not_confirmed",
+      503,
+    );
+  }
   return response.sets;
 }
 

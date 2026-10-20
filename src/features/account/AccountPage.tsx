@@ -291,8 +291,12 @@ export function AccountPage() {
         <div className="account-dashboard">
           <section className="account-stats" aria-label="Progress summary">
             <div>
-              <span>Total XP</span>
+              <span>Available XP</span>
               <strong>{account.progression.xp}</strong>
+            </div>
+            <div>
+              <span>Lifetime XP</span>
+              <strong>{account.progression.lifetimeXp}</strong>
             </div>
             <div>
               <span>Daily streak</span>
@@ -434,7 +438,8 @@ export function AccountPage() {
               <div className="account-set-list">
                 {availableSets.map((set) => {
                   const unlocked = unlockedIds.has(set.setId);
-                  const canAfford = account.progression.xp >= set.xpCost;
+                  const hasLifetimeXp =
+                    account.progression.lifetimeXp >= set.xpCost;
                   return (
                     <article className="account-set-row" key={set.setId}>
                       <div>
@@ -442,7 +447,7 @@ export function AccountPage() {
                         <small>
                           {unlocked
                             ? "Ready to open"
-                            : `${set.xpCost} XP to unlock`}
+                            : `Unlock at ${set.xpCost.toLocaleString()} lifetime XP`}
                         </small>
                       </div>
                       {unlocked ? (
@@ -456,12 +461,12 @@ export function AccountPage() {
                         <button
                           className="pack-button pack-button--secondary"
                           type="button"
-                          disabled={busy || !canAfford}
+                          disabled={busy || !hasLifetimeXp}
                           onClick={() => void unlockSet(set.setId)}
                         >
-                          {canAfford
-                            ? `Unlock · ${set.xpCost} XP`
-                            : `${set.xpCost - account.progression.xp} XP to go`}
+                          {hasLifetimeXp
+                            ? "Unlock set"
+                            : `${(set.xpCost - account.progression.lifetimeXp).toLocaleString()} lifetime XP to go`}
                         </button>
                       )}
                     </article>
@@ -470,8 +475,10 @@ export function AccountPage() {
               </div>
             )}
             <p className="account-muted">
-              XP is spent when you unlock a set. Sets whose TCGdex card records
-              lack artwork are hidden.
+              Lifetime XP unlocks sets and is never spent. Available XP can buy
+              God Packs within the price and rolling limit configured for each
+              set by an administrator. Sets whose TCGdex card records lack
+              artwork are hidden.
             </p>
           </section>
 

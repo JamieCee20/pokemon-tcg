@@ -433,6 +433,36 @@
   box-shadow: none;
 }
 
+.pack-god-pack-offer {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  max-width: 290px;
+}
+
+.pack-button--god {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  border-color: rgb(207 172 245 / 62%);
+  color: #f7edff;
+  background: linear-gradient(145deg, #523c70, #30233f);
+  box-shadow: 0 7px 20px rgb(105 75 143 / 20%);
+  text-align: center;
+  text-decoration: none;
+}
+
+.pack-button--god:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.pack-god-pack-offer > span {
+  color: var(--color-faint);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
 .pack-simulator__session {
   color: var(--color-faint);
   font-size: 11px;

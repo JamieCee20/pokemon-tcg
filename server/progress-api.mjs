@@ -51,7 +51,23 @@ const FULL_ART_RARITIES = new Set([
   "megaHyperRare",
   "shinyUltraRare",
   "blackWhiteRare",
+  "futureRare",
 ]);
+const GOD_PACK_RARITIES = new Set([
+  "illustrationRare",
+  "ultraRare",
+  "shinyUltraRare",
+  "megaAttackRare",
+  "specialIllustrationRare",
+  "hyperRare",
+  "megaHyperRare",
+  "blackWhiteRare",
+  "futureRare",
+]);
+const GOD_PACK_BASE_XP_COST = 1_000;
+const GOD_PACK_XP_COST_STEP = 500;
+const GOD_PACK_DEFAULT_LIMIT = 1;
+const GOD_PACK_DEFAULT_WINDOW_DAYS = 7;
 const PACK_SET_DEFINITIONS = packSetConfig;
 let PACK_SETS = PACK_SET_DEFINITIONS;
 const setAvailabilityCache = new Map();
@@ -98,6 +114,7 @@ database.exec(`
   CREATE TABLE IF NOT EXISTS user_progress (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     xp INTEGER NOT NULL DEFAULT 0 CHECK(xp >= 0),
+    lifetime_xp INTEGER NOT NULL DEFAULT 0 CHECK(lifetime_xp >= 0),
     streak_days INTEGER NOT NULL DEFAULT 0 CHECK(streak_days >= 0),
     last_activity_date TEXT,
     updated_at TEXT NOT NULL
@@ -130,6 +147,7 @@ database.exec(`
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     set_id TEXT NOT NULL,
     total_cards INTEGER NOT NULL CHECK(total_cards BETWEEN 1 AND 20),
+    pack_type TEXT NOT NULL DEFAULT 'standard' CHECK(pack_type IN ('standard', 'god')),
     revealed_count INTEGER NOT NULL DEFAULT 0 CHECK(revealed_count >= 0),
     complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0, 1)),
     started_at TEXT NOT NULL,
@@ -137,6 +155,26 @@ database.exec(`
   ) STRICT;
 
   CREATE INDEX IF NOT EXISTS pack_sessions_user_idx ON pack_sessions(user_id, started_at);
+
+  CREATE TABLE IF NOT EXISTS god_pack_purchases (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    week_start TEXT NOT NULL,
+    pack_id TEXT NOT NULL UNIQUE REFERENCES pack_sessions(id) ON DELETE CASCADE,
+    set_id TEXT NOT NULL,
+    purchased_at TEXT NOT NULL,
+    PRIMARY KEY(user_id, week_start)
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS god_pack_purchase_history (
+    purchase_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pack_id TEXT NOT NULL UNIQUE REFERENCES pack_sessions(id) ON DELETE CASCADE,
+    set_id TEXT NOT NULL,
+    purchased_at TEXT NOT NULL
+  ) STRICT;
+
+  CREATE INDEX IF NOT EXISTS god_pack_history_user_set_time_idx
+    ON god_pack_purchase_history(user_id, set_id, purchased_at);
 
   CREATE TABLE IF NOT EXISTS pack_reveals (
     pack_id TEXT NOT NULL REFERENCES pack_sessions(id) ON DELETE CASCADE,
@@ -151,7 +189,10 @@ database.exec(`
   CREATE TABLE IF NOT EXISTS pack_set_settings (
     set_id TEXT PRIMARY KEY,
     xp_cost INTEGER NOT NULL CHECK(xp_cost BETWEEN 0 AND 1000000),
-    sort_order INTEGER NOT NULL
+    sort_order INTEGER NOT NULL,
+    god_pack_xp_cost INTEGER NOT NULL DEFAULT 1000 CHECK(god_pack_xp_cost BETWEEN 0 AND 1000000),
+    god_pack_limit INTEGER NOT NULL DEFAULT 1 CHECK(god_pack_limit BETWEEN 1 AND 100),
+    god_pack_window_days INTEGER NOT NULL DEFAULT 7 CHECK(god_pack_window_days BETWEEN 1 AND 3650)
   ) STRICT;
 
   CREATE TABLE IF NOT EXISTS admin_audit_log (
@@ -179,6 +220,31 @@ function ensureColumn(tableName, columnName, definition) {
 
 ensureColumn("users", "role", "TEXT NOT NULL DEFAULT 'user'");
 ensureColumn("users", "account_status", "TEXT NOT NULL DEFAULT 'active'");
+ensureColumn(
+  "user_progress",
+  "lifetime_xp",
+  "INTEGER NOT NULL DEFAULT 0 CHECK(lifetime_xp >= 0)",
+);
+ensureColumn(
+  "pack_sessions",
+  "pack_type",
+  "TEXT NOT NULL DEFAULT 'standard' CHECK(pack_type IN ('standard', 'god'))",
+);
+ensureColumn(
+  "pack_set_settings",
+  "god_pack_xp_cost",
+  "INTEGER NOT NULL DEFAULT 1000 CHECK(god_pack_xp_cost BETWEEN 0 AND 1000000)",
+);
+ensureColumn(
+  "pack_set_settings",
+  "god_pack_limit",
+  "INTEGER NOT NULL DEFAULT 1 CHECK(god_pack_limit BETWEEN 1 AND 100)",
+);
+ensureColumn(
+  "pack_set_settings",
+  "god_pack_window_days",
+  "INTEGER NOT NULL DEFAULT 7 CHECK(god_pack_window_days BETWEEN 1 AND 3650)",
+);
 database
   .prepare(
     "UPDATE users SET account_status = 'pending_approval' WHERE account_status = 'pending_email'",
@@ -186,7 +252,9 @@ database
   .run();
 
 const seedPackSetSetting = database.prepare(
-  "INSERT OR IGNORE INTO pack_set_settings (set_id, xp_cost, sort_order) VALUES (?, ?, ?)",
+  `INSERT OR IGNORE INTO pack_set_settings
+    (set_id, xp_cost, sort_order, god_pack_xp_cost, god_pack_limit, god_pack_window_days)
+   VALUES (?, ?, ?, ?, ?, ?)`,
 );
 PACK_SET_DEFINITIONS.forEach((set, index) => {
   const settingExists = database
@@ -201,13 +269,71 @@ PACK_SET_DEFINITIONS.forEach((set, index) => {
     .get()?.highest;
   const nextOrder =
     currentCount === 0 ? (index + 1) * 100 : (highestOrder ?? 0) + 100;
-  seedPackSetSetting.run(set.id, set.xpCost, nextOrder);
+  seedPackSetSetting.run(
+    set.id,
+    set.xpCost,
+    nextOrder,
+    GOD_PACK_BASE_XP_COST +
+      Math.floor(Math.max(currentCount, index) / 3) * GOD_PACK_XP_COST_STEP,
+    GOD_PACK_DEFAULT_LIMIT,
+    GOD_PACK_DEFAULT_WINDOW_DAYS,
+  );
 });
+
+database
+  .prepare(
+    `INSERT OR IGNORE INTO god_pack_purchase_history
+      (purchase_id, user_id, pack_id, set_id, purchased_at)
+     SELECT pack_id, user_id, pack_id, set_id, purchased_at
+     FROM god_pack_purchases`,
+  )
+  .run();
+
+const GOD_PACK_SETTINGS_MIGRATION_ID = "2026-10-per-set-god-pack-settings-v1";
+if (
+  !database
+    .prepare("SELECT 1 FROM account_migrations WHERE migration_id = ?")
+    .get(GOD_PACK_SETTINGS_MIGRATION_ID)
+) {
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const configuredSetIds = new Set(PACK_SET_DEFINITIONS.map((set) => set.id));
+    const rows = database
+      .prepare("SELECT set_id FROM pack_set_settings ORDER BY sort_order")
+      .all()
+      .filter((row) => configuredSetIds.has(row.set_id));
+    const updateGodPackDefaults = database.prepare(
+      "UPDATE pack_set_settings SET god_pack_xp_cost = ?, god_pack_limit = ?, god_pack_window_days = ? WHERE set_id = ?",
+    );
+    rows.forEach((row, index) => {
+      updateGodPackDefaults.run(
+        GOD_PACK_BASE_XP_COST +
+          Math.floor(index / 3) * GOD_PACK_XP_COST_STEP,
+        GOD_PACK_DEFAULT_LIMIT,
+        GOD_PACK_DEFAULT_WINDOW_DAYS,
+        row.set_id,
+      );
+    });
+    database
+      .prepare(
+        "INSERT INTO account_migrations (migration_id, applied_at) VALUES (?, ?)",
+      )
+      .run(GOD_PACK_SETTINGS_MIGRATION_ID, new Date().toISOString());
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
 
 function getConfiguredPackSets() {
   const settings = new Map(
     database
-      .prepare("SELECT set_id, xp_cost, sort_order FROM pack_set_settings")
+      .prepare(
+        `SELECT set_id, xp_cost, sort_order, god_pack_xp_cost,
+                god_pack_limit, god_pack_window_days
+         FROM pack_set_settings`,
+      )
       .all()
       .map((row) => [row.set_id, row]),
   );
@@ -215,6 +341,12 @@ function getConfiguredPackSets() {
     ...set,
     xpCost: settings.get(set.id)?.xp_cost ?? set.xpCost,
     sortOrder: settings.get(set.id)?.sort_order ?? (index + 1) * 100,
+    godPackXpCost:
+      settings.get(set.id)?.god_pack_xp_cost ?? GOD_PACK_BASE_XP_COST,
+    godPackLimit:
+      settings.get(set.id)?.god_pack_limit ?? GOD_PACK_DEFAULT_LIMIT,
+    godPackWindowDays:
+      settings.get(set.id)?.god_pack_window_days ?? GOD_PACK_DEFAULT_WINDOW_DAYS,
   })).sort((left, right) => left.sortOrder - right.sortOrder);
 }
 
@@ -251,6 +383,38 @@ if (
   }
 }
 
+const LIFETIME_XP_MIGRATION_ID = "2026-10-lifetime-xp-v1";
+if (
+  !database
+    .prepare("SELECT 1 FROM account_migrations WHERE migration_id = ?")
+    .get(LIFETIME_XP_MIGRATION_ID)
+) {
+  const migratedAt = new Date().toISOString();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    database
+      .prepare(
+        `UPDATE user_progress
+         SET lifetime_xp = xp + COALESCE((
+           SELECT SUM(pack_set_settings.xp_cost)
+           FROM user_unlocks
+           JOIN pack_set_settings ON pack_set_settings.set_id = user_unlocks.set_id
+           WHERE user_unlocks.user_id = user_progress.user_id
+         ), 0)`,
+      )
+      .run();
+    database
+      .prepare(
+        "INSERT INTO account_migrations (migration_id, applied_at) VALUES (?, ?)",
+      )
+      .run(LIFETIME_XP_MIGRATION_ID, migratedAt);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 const statement = {
   findUserByEmail: database.prepare(
     "SELECT * FROM users WHERE email = ? COLLATE NOCASE",
@@ -266,7 +430,7 @@ const statement = {
     "SELECT * FROM user_progress WHERE user_id = ?",
   ),
   updateProgress: database.prepare(
-    "UPDATE user_progress SET xp = ?, streak_days = ?, last_activity_date = ?, updated_at = ? WHERE user_id = ?",
+    "UPDATE user_progress SET xp = ?, lifetime_xp = ?, streak_days = ?, last_activity_date = ?, updated_at = ? WHERE user_id = ?",
   ),
   listUnlocks: database.prepare(
     "SELECT set_id, unlocked_at FROM user_unlocks WHERE user_id = ? ORDER BY unlocked_at, set_id",
@@ -296,7 +460,17 @@ const statement = {
     "SELECT * FROM pack_sessions WHERE id = ? AND user_id = ?",
   ),
   insertPack: database.prepare(
-    "INSERT INTO pack_sessions (id, user_id, set_id, total_cards, started_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO pack_sessions (id, user_id, set_id, total_cards, pack_type, started_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ),
+  listGodPackPurchasesInWindow: database.prepare(
+    `SELECT COUNT(*) AS count, MIN(purchased_at) AS oldest
+     FROM god_pack_purchase_history
+     WHERE user_id = ? AND set_id = ? AND purchased_at >= ?`,
+  ),
+  insertGodPackPurchase: database.prepare(
+    `INSERT INTO god_pack_purchase_history
+      (purchase_id, user_id, pack_id, set_id, purchased_at)
+     VALUES (?, ?, ?, ?, ?)`,
   ),
   insertReveal: database.prepare(
     "INSERT INTO pack_reveals (pack_id, position, card_id, rarity, finish, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -523,6 +697,30 @@ async function verifyPassword(password, saltHex, hashHex) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+function getGodPackStatus(userId, setId, now = new Date()) {
+  const set = PACK_SETS.find((candidate) => candidate.id === setId);
+  if (!set) return null;
+  const windowMs = set.godPackWindowDays * 24 * 60 * 60 * 1000;
+  const windowStart = new Date(now.getTime() - windowMs).toISOString();
+  const usage = statement.listGodPackPurchasesInWindow.get(
+    userId,
+    setId,
+    windowStart,
+  );
+  const openedInWindow = usage?.count ?? 0;
+  const availableAt =
+    openedInWindow >= set.godPackLimit && usage?.oldest
+      ? new Date(Date.parse(usage.oldest) + windowMs).toISOString()
+      : null;
+  return {
+    limit: set.godPackLimit,
+    windowDays: set.godPackWindowDays,
+    openedInWindow,
+    remaining: Math.max(set.godPackLimit - openedInWindow, 0),
+    availableAt,
+  };
+}
+
 function snapshot(user) {
   const progress = statement.getProgress.get(user.id);
   const today = new Date().toISOString().slice(0, 10);
@@ -544,6 +742,10 @@ function snapshot(user) {
     },
     progression: {
       xp: progress?.xp ?? 0,
+      lifetimeXp: progress?.lifetime_xp ?? 0,
+      godPack: Object.fromEntries(
+        PACK_SETS.map((set) => [set.id, getGodPackStatus(user.id, set.id)]),
+      ),
       streakDays: streakIsActive ? (progress?.streak_days ?? 0) : 0,
       lastActivityDate: progress?.last_activity_date ?? null,
       unlockedSets: statement.listUnlocks.all(user.id).map((row) => ({
@@ -564,6 +766,7 @@ function addXp(userId, amount) {
   const row = statement.getProgress.get(userId);
   statement.updateProgress.run(
     (row?.xp ?? 0) + amount,
+    (row?.lifetime_xp ?? 0) + amount,
     row?.streak_days ?? 0,
     row?.last_activity_date ?? null,
     new Date().toISOString(),
@@ -600,6 +803,7 @@ function claimDailyStreak(userId) {
   const xp = 5 + Math.min(streakDays - 1, 5) * 2;
   statement.updateProgress.run(
     (progress?.xp ?? 0) + xp,
+    (progress?.lifetime_xp ?? 0) + xp,
     streakDays,
     today,
     new Date().toISOString(),
@@ -636,6 +840,9 @@ async function getSetAvailability() {
       ...setAvailabilityCache.get(set.id).result,
       xpCost: set.xpCost,
       sortOrder: set.sortOrder,
+      godPackXpCost: set.godPackXpCost,
+      godPackLimit: set.godPackLimit,
+      godPackWindowDays: set.godPackWindowDays,
     }));
   }
   const concurrency = 4;
@@ -698,6 +905,9 @@ async function getSetAvailability() {
     ...setAvailabilityCache.get(set.id).result,
     xpCost: set.xpCost,
     sortOrder: set.sortOrder,
+    godPackXpCost: set.godPackXpCost,
+    godPackLimit: set.godPackLimit,
+    godPackWindowDays: set.godPackWindowDays,
   }));
 }
 
@@ -831,6 +1041,9 @@ function getAdminSetRows() {
     name: set.name,
     xpCost: set.xpCost,
     sortOrder: set.sortOrder,
+    godPackXpCost: set.godPackXpCost,
+    godPackLimit: set.godPackLimit,
+    godPackWindowDays: set.godPackWindowDays,
     available: availability.get(set.id)?.available ?? false,
   }));
 }
@@ -1014,9 +1227,11 @@ const server = createServer(async (request, response) => {
         }
         const progress = statement.getProgress.get(target.id);
         const previousXp = progress?.xp ?? 0;
+        const previousLifetimeXp = progress?.lifetime_xp ?? 0;
         transaction(() => {
           statement.updateProgress.run(
             xp,
+            Math.max(previousLifetimeXp, xp),
             progress?.streak_days ?? 0,
             progress?.last_activity_date ?? null,
             new Date().toISOString(),
@@ -1024,6 +1239,7 @@ const server = createServer(async (request, response) => {
           );
           recordAdminAction(admin, "set_user_xp", "user", target.id, {
             previousXp,
+            previousLifetimeXp,
             xp,
             reason,
           });
@@ -1061,6 +1277,9 @@ const server = createServer(async (request, response) => {
           }
           const xpCost = Number(row.xpCost);
           const sortOrder = Number(row.sortOrder);
+          const godPackXpCost = Number(row.godPackXpCost);
+          const godPackLimit = Number(row.godPackLimit);
+          const godPackWindowDays = Number(row.godPackWindowDays);
           if (
             seen.has(row.setId) ||
             !Number.isInteger(xpCost) ||
@@ -1068,16 +1287,32 @@ const server = createServer(async (request, response) => {
             xpCost > 1_000_000 ||
             !Number.isInteger(sortOrder) ||
             sortOrder < 0 ||
-            sortOrder > 1_000_000
+            sortOrder > 1_000_000 ||
+            !Number.isInteger(godPackXpCost) ||
+            godPackXpCost < 0 ||
+            godPackXpCost > 1_000_000 ||
+            !Number.isInteger(godPackLimit) ||
+            godPackLimit < 1 ||
+            godPackLimit > 100 ||
+            !Number.isInteger(godPackWindowDays) ||
+            godPackWindowDays < 1 ||
+            godPackWindowDays > 3650
           ) {
             throw apiError(
-              "Set XP costs and order must be unique, valid whole numbers.",
+              "Set costs, order, God Pack limits and periods must be valid whole numbers within their allowed ranges.",
               400,
               "invalid_set_config",
             );
           }
           seen.add(row.setId);
-          return { setId: row.setId, xpCost, sortOrder };
+          return {
+            setId: row.setId,
+            xpCost,
+            sortOrder,
+            godPackXpCost,
+            godPackLimit,
+            godPackWindowDays,
+          };
         });
         if (
           seen.size !== PACK_SET_DEFINITIONS.length ||
@@ -1091,18 +1326,39 @@ const server = createServer(async (request, response) => {
           );
         }
         const previous = getConfiguredPackSets().map(
-          ({ setId, id, xpCost, sortOrder }) => ({
+          ({
+            setId,
+            id,
+            xpCost,
+            sortOrder,
+            godPackXpCost,
+            godPackLimit,
+            godPackWindowDays,
+          }) => ({
             setId: setId ?? id,
             xpCost,
             sortOrder,
+            godPackXpCost,
+            godPackLimit,
+            godPackWindowDays,
           }),
         );
         transaction(() => {
           const update = database.prepare(
-            "UPDATE pack_set_settings SET xp_cost = ?, sort_order = ? WHERE set_id = ?",
+            `UPDATE pack_set_settings
+             SET xp_cost = ?, sort_order = ?, god_pack_xp_cost = ?,
+                 god_pack_limit = ?, god_pack_window_days = ?
+             WHERE set_id = ?`,
           );
           for (const row of nextSettings)
-            update.run(row.xpCost, row.sortOrder, row.setId);
+            update.run(
+              row.xpCost,
+              row.sortOrder,
+              row.godPackXpCost,
+              row.godPackLimit,
+              row.godPackWindowDays,
+              row.setId,
+            );
           recordAdminAction(
             admin,
             "update_pack_set_settings",
@@ -1384,20 +1640,13 @@ const server = createServer(async (request, response) => {
       transaction(() => {
         if (statement.hasUnlock.get(user.id, set.id)) return;
         const progress = statement.getProgress.get(user.id);
-        if ((progress?.xp ?? 0) < set.xpCost) {
+        if ((progress?.lifetime_xp ?? 0) < set.xpCost) {
           throw apiError(
-            `You need ${set.xpCost - (progress?.xp ?? 0)} more XP to unlock this set.`,
+            `You need ${set.xpCost - (progress?.lifetime_xp ?? 0)} more lifetime XP to unlock this set.`,
             409,
             "not_enough_xp",
           );
         }
-        statement.updateProgress.run(
-          (progress?.xp ?? 0) - set.xpCost,
-          progress?.streak_days ?? 0,
-          progress?.last_activity_date ?? null,
-          new Date().toISOString(),
-          user.id,
-        );
         statement.insertUnlock.run(user.id, set.id, new Date().toISOString());
       });
       sendJson(response, 200, {
@@ -1412,8 +1661,15 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const setId = typeof body.setId === "string" ? body.setId : "";
       const totalCards = Number(body.totalCards);
+      const packType = body.packType === "god" ? "god" : "standard";
       const configuredSet = PACK_SETS.find((set) => set.id === setId);
-      if (!configuredSet || totalCards !== configuredSet.cardsPerPack) {
+      if (
+        !configuredSet ||
+        totalCards !== configuredSet.cardsPerPack ||
+        (body.packType !== undefined &&
+          body.packType !== "standard" &&
+          body.packType !== "god")
+      ) {
         throw apiError("Pack card count is invalid.", 400, "invalid_pack");
       }
       const available = await getSetAvailability();
@@ -1437,21 +1693,59 @@ const server = createServer(async (request, response) => {
       }
       if (!statement.hasUnlock.get(user.id, setId)) {
         throw apiError(
-          "Unlock this set with XP before opening its packs.",
+          "Reach the lifetime XP threshold and unlock this set before opening its packs.",
           403,
           "set_locked",
         );
       }
       const packId = ulid();
       const dailyReward = transaction(() => {
+        if (packType === "god") {
+          const godPackStatus = getGodPackStatus(user.id, setId);
+          if (godPackStatus.remaining <= 0) {
+            throw apiError(
+              `You have used the God Pack limit for ${configuredSet.name}. Another will be available after ${godPackStatus.availableAt}.`,
+              409,
+              "god_pack_limit_reached",
+            );
+          }
+          const progress = statement.getProgress.get(user.id);
+          const cost = configuredSet.godPackXpCost;
+          if ((progress?.xp ?? 0) < cost) {
+            throw apiError(
+              `You need ${cost - (progress?.xp ?? 0)} more available XP to buy this God Pack.`,
+              409,
+              "not_enough_xp",
+            );
+          }
+          statement.updateProgress.run(
+            (progress?.xp ?? 0) - cost,
+            progress?.lifetime_xp ?? 0,
+            progress?.streak_days ?? 0,
+            progress?.last_activity_date ?? null,
+            new Date().toISOString(),
+            user.id,
+          );
+        }
         const daily = claimDailyStreak(user.id);
         statement.insertPack.run(
           packId,
           user.id,
           setId,
           totalCards,
+          packType,
           new Date().toISOString(),
         );
+        if (packType === "god") {
+          const purchasedAt = new Date().toISOString();
+          statement.insertGodPackPurchase.run(
+            packId,
+            user.id,
+            packId,
+            setId,
+            purchasedAt,
+          );
+        }
         return daily;
       });
       sendJson(response, 201, {
@@ -1524,6 +1818,21 @@ const server = createServer(async (request, response) => {
           "This card does not belong to the selected set.",
           400,
           "invalid_card",
+        );
+      }
+      if (
+        pack.pack_type === "god" &&
+        ((position === 0 &&
+          (rarity !== "energy" || !cardId.startsWith("sim-energy-"))) ||
+          (position > 0 &&
+            (rarity === "energy" ||
+              cardId.startsWith("sim-energy-") ||
+              !GOD_PACK_RARITIES.has(rarity))))
+      ) {
+        throw apiError(
+          "God Packs must reveal an energy first, followed only by IR-or-higher cards.",
+          400,
+          "invalid_god_pack_reveal",
         );
       }
       const result = transaction(() => {
