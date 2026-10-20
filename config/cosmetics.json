@@ -1,0 +1,122 @@
+[
+  {
+    "id": "table-emerald",
+    "category": "tableTheme",
+    "name": "Emerald Felt",
+    "description": "The original green felt table.",
+    "style": "emerald",
+    "unlock": { "type": "default" }
+  },
+  {
+    "id": "table-aurora",
+    "category": "tableTheme",
+    "name": "Aurora Night",
+    "description": "A deep blue table earned at Collector mastery.",
+    "style": "aurora",
+    "unlock": { "type": "mastery", "rank": "collector" }
+  },
+  {
+    "id": "table-champion",
+    "category": "tableTheme",
+    "name": "Champion's Hall",
+    "description": "A warm gold table earned by completing any set.",
+    "style": "champion",
+    "unlock": { "type": "mastery", "rank": "master" }
+  },
+  {
+    "id": "display-grid",
+    "category": "collectionDisplay",
+    "name": "Card Grid",
+    "description": "The standard collection grid.",
+    "style": "grid",
+    "unlock": { "type": "default" }
+  },
+  {
+    "id": "display-binder",
+    "category": "collectionDisplay",
+    "name": "Binder Pages",
+    "description": "A binder layout earned at Explorer mastery.",
+    "style": "binder",
+    "unlock": { "type": "mastery", "rank": "explorer" }
+  },
+  {
+    "id": "display-rarity",
+    "category": "collectionDisplay",
+    "name": "Rarity Groups",
+    "description": "Group cards by rarity, earned at Collector mastery.",
+    "style": "rarity",
+    "unlock": { "type": "mastery", "rank": "collector" }
+  },
+  {
+    "id": "badge-starter",
+    "category": "profileBadge",
+    "name": "Vault Starter",
+    "description": "Your first profile badge.",
+    "style": "starter",
+    "unlock": { "type": "default" }
+  },
+  {
+    "id": "badge-first-pull",
+    "category": "profileBadge",
+    "name": "First Pull",
+    "description": "Earned by collecting your first card.",
+    "style": "first-pull",
+    "unlock": { "type": "achievement", "id": "first-card-ever" }
+  },
+  {
+    "id": "badge-first-foil",
+    "category": "profileBadge",
+    "name": "First Foil",
+    "description": "Earned with your first holo or reverse card.",
+    "style": "first-foil",
+    "unlock": { "type": "achievement", "id": "first-shiny" }
+  },
+  {
+    "id": "badge-full-art",
+    "category": "profileBadge",
+    "name": "Full Art Find",
+    "description": "Earned with your first full-art rarity pull.",
+    "style": "full-art",
+    "unlock": { "type": "achievement", "id": "first-full-art" }
+  },
+  {
+    "id": "badge-seven-day",
+    "category": "profileBadge",
+    "name": "Seven Day Spark",
+    "description": "Earned by reaching a seven-day pack streak.",
+    "style": "seven-day",
+    "unlock": { "type": "achievement", "id": "seven-day-streak" }
+  },
+  {
+    "id": "badge-explorer",
+    "category": "profileBadge",
+    "name": "Explorer",
+    "description": "Earned at Explorer mastery in any set.",
+    "style": "explorer",
+    "unlock": { "type": "mastery", "rank": "explorer" }
+  },
+  {
+    "id": "badge-collector",
+    "category": "profileBadge",
+    "name": "Collector",
+    "description": "Earned at Collector mastery in any set.",
+    "style": "collector",
+    "unlock": { "type": "mastery", "rank": "collector" }
+  },
+  {
+    "id": "badge-archivist",
+    "category": "profileBadge",
+    "name": "Archivist",
+    "description": "Earned at Archivist mastery in any set.",
+    "style": "archivist",
+    "unlock": { "type": "mastery", "rank": "archivist" }
+  },
+  {
+    "id": "badge-master",
+    "category": "profileBadge",
+    "name": "Set Master",
+    "description": "Earned by completing any eligible set.",
+    "style": "master",
+    "unlock": { "type": "mastery", "rank": "master" }
+  }
+]

@@ -53,6 +53,38 @@
   font-weight: 700;
 }
 
+.account-heading__identity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.account-profile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid rgb(232 206 145 / 45%);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgb(246 212 126 / 16%), #20252b);
+  color: #f4dea1;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.account-profile-badge--master,
+.account-profile-badge--full-art {
+  border-color: rgb(238 194 94 / 70%);
+  background: linear-gradient(135deg, #66502b, #29251e);
+}
+
+.account-profile-badge--first-foil,
+.account-profile-badge--seven-day {
+  border-color: rgb(144 213 225 / 65%);
+  background: linear-gradient(135deg, #263f57, #20252b);
+}
+
 .account-dashboard {
   display: grid;
   gap: 14px;
@@ -122,6 +154,142 @@
   color: var(--color-gold-bright);
   font-size: clamp(16px, 2.5vw, 22px);
   overflow-wrap: anywhere;
+}
+
+.account-mastery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.account-mastery-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.account-mastery-card > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.account-mastery-card strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-mastery-card small,
+.account-mastery-card__percent {
+  color: var(--color-muted);
+  font-size: 9px;
+}
+
+.account-mastery-card__progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 9%);
+}
+
+.account-mastery-card__progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #9d7b35, #f3d780);
+  transition: width 220ms ease;
+}
+
+.mastery-emblem {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 2px solid #e8ca7a;
+  border-radius: 42% 42% 50% 50%;
+  background:
+    radial-gradient(circle at 32% 22%, rgb(255 255 255 / 60%), transparent 28%),
+    linear-gradient(145deg, #8b6d34, #342b1d 68%);
+  color: #fff0b4;
+  box-shadow:
+    inset 0 0 0 2px rgb(255 255 255 / 12%),
+    0 3px 9px rgb(0 0 0 / 30%);
+  font-size: 21px;
+  line-height: 1;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 50%);
+}
+
+.mastery-emblem--explorer {
+  border-color: #c99e64;
+  background: linear-gradient(145deg, #735237, #2c241d);
+}
+
+.mastery-emblem--collector {
+  border-color: #b5d4e6;
+  background: linear-gradient(145deg, #4b7892, #24364a);
+}
+
+.mastery-emblem--archivist {
+  border-color: #d5a4e8;
+  background: linear-gradient(145deg, #76508b, #312640);
+}
+
+.mastery-emblem--master {
+  border-color: #ffe18a;
+  background: linear-gradient(145deg, #d79a35, #684321);
+  box-shadow:
+    inset 0 0 0 2px rgb(255 255 255 / 18%),
+    0 0 12px rgb(246 212 126 / 34%);
+}
+
+.mastery-emblem--locked {
+  border-color: #59616a;
+  background: linear-gradient(145deg, #39414a, #20252b);
+  color: #7d858f;
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 5%);
+}
+
+.account-milestones {
+  margin-top: 19px;
+  padding-top: 15px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.account-milestones h3 {
+  margin: 0 0 10px;
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.account-milestones ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-milestones li {
+  padding: 6px 9px;
+  border: 1px solid rgb(232 206 145 / 27%);
+  border-radius: 999px;
+  background: rgb(232 206 145 / 7%);
+  color: #ead9ac;
+  font-size: 10px;
+}
+
+.account-milestones li span {
+  color: var(--color-gold-bright);
 }
 
 .account-rewards > div > .eyebrow {
@@ -381,6 +549,15 @@
 @media (max-width: 680px) {
   .account-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .account-mastery-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-heading__identity {
+    align-items: flex-end;
+    flex-direction: column;
   }
 
   .account-section-heading,

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { PageFrame } from "../../components/AppLayout";
-import { assetImageUrl, cardImageUrl } from "../../lib/tcgdex/api";
+import { cardImageUrl, getCard } from "../../lib/tcgdex/api";
 import type { CardSummary } from "../../lib/tcgdex/types";
 import { useAccount } from "../account/AccountContext";
 import {
+  equipCosmetic,
+  getPackThemes,
   getPackSetAvailability,
   recordPackReveal,
   startPackSession,
@@ -21,13 +23,112 @@ import {
 } from "./packData";
 import type { PackCard } from "./packData";
 import { readPackCollection, writePackCollection } from "./collectionStorage";
+import packThemeConfig from "../../../docs/cees-card-vault-themes/themes.json";
 import "./PackSimulatorPage.css";
+
+const PACK_THEMES = packThemeConfig.themes;
+const DEFAULT_THEME_ID = packThemeConfig.defaultThemeId;
+const THEME_SVG_SOURCE = import.meta.glob(
+  "../../../docs/cees-card-vault-themes/assets/**/*.svg",
+  { query: "?raw", import: "default" },
+) as Record<string, () => Promise<string>>;
+const pulledCardTypes = new Map<string, Promise<string[]>>();
+
+function themeAssetUrl(path: string) {
+  return `/pack-themes/${path}`;
+}
+
+function InlineThemeArtwork({
+  path,
+  className,
+}: {
+  path: string;
+  className: string;
+}) {
+  const key = `../../../docs/cees-card-vault-themes/${path}`;
+  const loadArtwork = THEME_SVG_SOURCE[key];
+  const artworkQuery = useQuery({
+    queryKey: ["pack-theme-artwork", path],
+    queryFn: loadArtwork ?? (() => Promise.resolve("")),
+    enabled: loadArtwork !== undefined,
+    staleTime: Infinity,
+    retry: false,
+  });
+  return artworkQuery.data ? (
+    <span
+      className={className}
+      aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: artworkQuery.data }}
+    />
+  ) : <span className={`${className} is-loading`} aria-hidden="true" />;
+}
+
+function pulledEnergyTypes(card: PackCard): Promise<string[]> {
+  if (card.rarity === "energy") return Promise.resolve([]);
+  if (card.types?.length) return Promise.resolve(card.types);
+  const cached = pulledCardTypes.get(card.id);
+  if (cached) return cached;
+  const request = getCard(card.id, AbortSignal.timeout(1_500))
+    .then((details) => details.types)
+    .catch(() => [] as string[]);
+  pulledCardTypes.set(card.id, request);
+  return request;
+}
 
 function compareCardNumbers(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true });
 }
 
 const GOD_PACK_RARITY_SET: ReadonlySet<string> = new Set(GOD_PACK_RARITIES);
+const COLLECTION_DISPLAY_OPTIONS = [
+  { id: "display-grid", name: "Card grid" },
+  { id: "display-binder", name: "Binder pages" },
+  { id: "display-rarity", name: "Rarity groups" },
+];
+
+function cosmeticStyle(
+  id: string | undefined,
+  prefix: string,
+  fallback: string,
+) {
+  return id?.startsWith(`${prefix}-`) ? id.slice(prefix.length + 1) : fallback;
+}
+
+function groupCollectionCards(
+  cards: CardSummary[],
+  rarityByCardId: Map<string, string>,
+) {
+  const groups = new Map<string, CardSummary[]>();
+  for (const card of cards) {
+    const rarity = rarityByCardId.get(card.id) ?? "common";
+    groups.set(rarity, [...(groups.get(rarity) ?? []), card]);
+  }
+  const rarityOrder = [
+    "common",
+    "uncommon",
+    "rare",
+    "doubleRare",
+    "aceSpecRare",
+    "shinyRare",
+    "ultraRare",
+    "shinyUltraRare",
+    "illustrationRare",
+    "specialIllustrationRare",
+    "hyperRare",
+    "megaAttackRare",
+    "megaHyperRare",
+    "blackWhiteRare",
+    "futureRare",
+    "classicCollection",
+    "pikachu",
+  ];
+  return [...groups.entries()]
+    .sort(
+      ([left], [right]) =>
+        rarityOrder.indexOf(left) - rarityOrder.indexOf(right),
+    )
+    .map(([rarity, groupCards]) => ({ rarity, cards: groupCards }));
+}
 
 function godPackPeriodLabel(days: number): string {
   return `${days} day${days === 1 ? "" : "s"}`;
@@ -37,15 +138,32 @@ function CollectionRoadmap({
   setName,
   cards,
   collectedIds,
+  rarityByCardId,
+  displayId,
+  displayChoices,
+  disabled,
+  onDisplayChange,
 }: {
   setName: string;
   cards: CardSummary[];
   collectedIds: Set<string>;
+  rarityByCardId: Map<string, string>;
+  displayId: string;
+  displayChoices: Array<{ id: string; name: string }>;
+  disabled: boolean;
+  onDisplayChange: (id: string) => void;
 }) {
   const collectedCount = cards.filter((card) =>
     collectedIds.has(card.id),
   ).length;
   const progress = cards.length > 0 ? (collectedCount / cards.length) * 100 : 0;
+  const displayStyle = displayId.replace("display-", "");
+  const displayCards =
+    displayStyle === "rarity"
+      ? groupCollectionCards(cards, rarityByCardId).flatMap(
+          (group) => group.cards,
+        )
+      : cards;
 
   return (
     <section
@@ -61,6 +179,23 @@ function CollectionRoadmap({
         <strong className="pack-collection__count">
           {collectedCount} <span>/ {cards.length} cards</span>
         </strong>
+        {displayChoices.length > 1 && (
+          <label className="pack-collection__display">
+            <span>Collection view</span>
+            <select
+              aria-label="Collection display style"
+              value={displayId}
+              disabled={disabled}
+              onChange={(event) => onDisplayChange(event.target.value)}
+            >
+              {displayChoices.map((choice) => (
+                <option key={choice.id} value={choice.id}>
+                  {choice.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       <div
         className="pack-collection__progress"
@@ -74,10 +209,11 @@ function CollectionRoadmap({
       </div>
       <div
         className="pack-collection__grid"
+        data-display={displayStyle}
         role="list"
         aria-label={`${setName} cards`}
       >
-        {cards.map((card) => {
+        {displayCards.map((card) => {
           const collected = collectedIds.has(card.id);
           const imageUrl = card.image ? cardImageUrl(card.image, "low") : null;
           return (
@@ -103,6 +239,14 @@ function CollectionRoadmap({
                 )}
               </div>
               <strong>{card.name}</strong>
+              {displayStyle === "rarity" && (
+                <small className="pack-collection-card__rarity">
+                  {rarityLabel(
+                    (rarityByCardId.get(card.id) ??
+                      "common") as PackCard["rarity"],
+                  )}
+                </small>
+              )}
               <small>#{card.localId}</small>
             </article>
           );
@@ -112,14 +256,25 @@ function CollectionRoadmap({
   );
 }
 
-function PackBack({ preparing = false }: { preparing?: boolean }) {
+function PackBack({
+  preparing = false,
+  artwork,
+  themeName,
+}: {
+  preparing?: boolean;
+  artwork: string;
+  themeName: string;
+}) {
   return (
-    <div className="pack-card__back" aria-label="Face-down Pokémon card">
-      <span className="pack-card__back-ring" aria-hidden="true">
-        <span />
-      </span>
-      <span className="pack-card__back-title">CEE’S CARD VAULT</span>
-      <span className="pack-card__back-caption">TRADING CARD GAME</span>
+    <div
+      className="pack-card__back pack-card__back--art"
+      role="img"
+      aria-label={`Face-down Cee’s Card Vault card with the ${themeName} theme`}
+    >
+      <InlineThemeArtwork
+        path={artwork}
+        className="pack-card__back-artwork"
+      />
       {preparing && (
         <span className="pack-card__preparing">PREPARING ARTWORK…</span>
       )}
@@ -133,6 +288,8 @@ function RevealedCard({
   faceUp,
   movingToBack,
   imageReady,
+  cardBackArtwork,
+  cardBackThemeName,
   disabled,
   onClick,
 }: {
@@ -141,6 +298,8 @@ function RevealedCard({
   faceUp: boolean;
   movingToBack: boolean;
   imageReady: boolean;
+  cardBackArtwork: string;
+  cardBackThemeName: string;
   disabled: boolean;
   onClick: () => void;
 }) {
@@ -160,7 +319,11 @@ function RevealedCard({
       onClick={onClick}
     >
       <div className="pack-card__inner">
-        <PackBack preparing={!imageReady} />
+        <PackBack
+          preparing={!imageReady}
+          artwork={cardBackArtwork}
+          themeName={cardBackThemeName}
+        />
         <div className="pack-card__front">
           {card.rarity === "energy" ? (
             <div
@@ -236,6 +399,7 @@ function DealtCard({
 
 export function PackSimulatorPage() {
   const { account, isLoading: accountLoading, setAccount } = useAccount();
+  const queryClient = useQueryClient();
   const [selectedSetId, setSelectedSetId] = useState(
     DEFAULT_PACK_PROFILE.setId,
   );
@@ -265,6 +429,9 @@ export function PackSimulatorPage() {
   const [newlyCollectedPositions, setNewlyCollectedPositions] = useState<
     Set<number>
   >(() => new Set());
+  const [newlyUnlockedThemeIds, setNewlyUnlockedThemeIds] = useState<string[]>(
+    [],
+  );
   const collectionAtPackStart = useRef<Set<string>>(new Set());
   const seenPackCardIds = useRef<Set<string>>(new Set());
   const openTimeout = useRef<number | null>(null);
@@ -275,6 +442,13 @@ export function PackSimulatorPage() {
     queryFn: getPackSetAvailability,
     staleTime: 5 * 60 * 1000,
     gcTime: 24 * 60 * 60 * 1000,
+    retry: false,
+  });
+  const packThemesQuery = useQuery({
+    queryKey: ["account", "pack-themes", account?.user.id],
+    queryFn: getPackThemes,
+    enabled: account !== null,
+    staleTime: 60_000,
     retry: false,
   });
   const availableSetMap = new Map(
@@ -316,6 +490,30 @@ export function PackSimulatorPage() {
     ...(collection[selectedSetId] ?? []),
     ...(account?.progression.collections[selectedSetId] ?? []),
   ]);
+  const rarityByCardId = new Map<string, string>();
+  if (catalogue) {
+    for (const [rarity, cards] of Object.entries(catalogue.cards)) {
+      for (const card of cards) rarityByCardId.set(card.id, rarity);
+    }
+  }
+  const equippedCosmetics = account?.progression.cosmetics.equipped;
+  const selectedThemeId =
+    packThemesQuery.data?.selectedThemeId ?? DEFAULT_THEME_ID;
+  const selectedTheme =
+    PACK_THEMES.find((theme) => theme.id === selectedThemeId) ?? PACK_THEMES[0]!;
+  const selectedThemeBackUrl = themeAssetUrl(selectedTheme.assets.cardBack);
+  const tableThemeStyle = cosmeticStyle(
+    equippedCosmetics?.tableTheme,
+    "table",
+    "emerald",
+  );
+  const collectionDisplayId =
+    equippedCosmetics?.collectionDisplay ?? "display-grid";
+  const collectionDisplayChoices = COLLECTION_DISPLAY_OPTIONS.filter(
+    (option) =>
+      option.id === "display-grid" ||
+      account?.progression.cosmetics.unlocked.includes(option.id),
+  );
   const allCardArtworkPresent =
     collectionCards.length > 0 &&
     collectionCards.every(
@@ -374,7 +572,6 @@ export function PackSimulatorPage() {
       (availableSetMap.get(left.setId)?.sortOrder ?? Number.MAX_SAFE_INTEGER) -
       (availableSetMap.get(right.setId)?.sortOrder ?? Number.MAX_SAFE_INTEGER),
   );
-  const setLogo = assetImageUrl(catalogue?.set.logo ?? null);
   const allRevealed = pack !== null && revealed >= pack.length;
   const currentCard = pack && !allRevealed ? pack[revealed] : null;
   const currentImageUrl = currentCard?.image
@@ -441,9 +638,7 @@ export function PackSimulatorPage() {
     if (openTimeout.current !== null) window.clearTimeout(openTimeout.current);
     if (sendTimeout.current !== null) window.clearTimeout(sendTimeout.current);
     const nextPack =
-      packType === "god"
-        ? createGodPack(catalogue)
-        : createPack(catalogue);
+      packType === "god" ? createGodPack(catalogue) : createPack(catalogue);
     collectionAtPackStart.current = new Set(collectedIds);
     seenPackCardIds.current = new Set();
     setNewlyCollectedPositions(new Set());
@@ -452,6 +647,7 @@ export function PackSimulatorPage() {
     setProgressError("");
     setProgressMessage("");
     setPendingReveal(null);
+    setNewlyUnlockedThemeIds([]);
     let nextSessionId: string | null = null;
     if (account) {
       try {
@@ -523,14 +719,29 @@ export function PackSimulatorPage() {
     setSavingProgress(true);
     setProgressError("");
     try {
+      const tidalThemeUnlocked = packThemesQuery.data?.themes.some(
+        (theme) => theme.id === "tidal-depths" && theme.unlocked,
+      );
+      const energyTypes = tidalThemeUnlocked
+        ? []
+        : await pulledEnergyTypes(card);
       const result = await recordPackReveal({
         packId,
         position,
         cardId: card.id,
         rarity: card.rarity,
         finish: card.finish,
+        energyTypes,
       });
       setAccount(result.account);
+      if (result.newThemesUnlocked.length > 0) {
+        setNewlyUnlockedThemeIds((previous) =>
+          [...new Set([...previous, ...result.newThemesUnlocked])],
+        );
+        void queryClient.invalidateQueries({
+          queryKey: ["account", "pack-themes", account?.user.id],
+        });
+      }
       setPendingReveal(null);
       const revealMessages = result.rewards.map(
         (reward) => `+${reward.xp} XP ${reward.label}`,
@@ -631,6 +842,30 @@ export function PackSimulatorPage() {
     setPendingReveal(null);
   }
 
+  async function changeCollectionDisplay(cosmeticId: string) {
+    if (
+      !account ||
+      savingProgress ||
+      collectionDisplayChoices.every((item) => item.id !== cosmeticId)
+    )
+      return;
+    setSavingProgress(true);
+    setProgressError("");
+    setProgressMessage("");
+    try {
+      setAccount(await equipCosmetic("collectionDisplay", cosmeticId));
+      setProgressMessage("Collection display saved to your account.");
+    } catch (error) {
+      setProgressError(
+        error instanceof Error
+          ? error.message
+          : "Could not save your collection display.",
+      );
+    } finally {
+      setSavingProgress(false);
+    }
+  }
+
   return (
     <PageFrame className="page-frame--packs">
       <header className="pack-page-heading">
@@ -676,7 +911,12 @@ export function PackSimulatorPage() {
       >
         {pack ? (
           <div
-            className={`pack-stack${opening ? " is-opening" : ""}${movingToBack ? " is-moving-card" : ""}`}
+            className={`pack-stack pack-stack--theme${opening ? " is-opening" : ""}${movingToBack ? " is-moving-card" : ""}`}
+            style={
+              {
+                "--pack-theme-cardback": `url("${selectedThemeBackUrl}")`,
+              } as CSSProperties
+            }
             role="group"
             aria-label="Pack card stack"
           >
@@ -697,6 +937,8 @@ export function PackSimulatorPage() {
                 faceUp={currentFaceUp}
                 movingToBack={movingToBack}
                 imageReady={currentArtworkReady}
+                cardBackArtwork={selectedTheme.assets.cardBack}
+                cardBackThemeName={selectedTheme.name}
                 disabled={
                   opening ||
                   movingToBack ||
@@ -708,19 +950,15 @@ export function PackSimulatorPage() {
             )}
           </div>
         ) : (
-          <div className={`pack-wrapper${opening ? " is-opening" : ""}`}>
-            <div className="pack-wrapper__shine" aria-hidden="true" />
-            {setLogo ? (
-              <img className="pack-wrapper__logo" src={setLogo} alt="" />
-            ) : (
-              <span className="pack-wrapper__set-name">
-                {profile.code.split(" · ")[0]}
-              </span>
-            )}
-            <span className="pack-wrapper__label">{profile.seriesLabel}</span>
-            <span className="pack-wrapper__bottom">
-              {profile.packDescription}
-            </span>
+          <div
+            className={`pack-wrapper pack-wrapper--art${opening ? " is-opening" : ""}`}
+            role="img"
+            aria-label={`${selectedTheme.name} booster wrapper for ${profile.name}`}
+          >
+            <InlineThemeArtwork
+              path={selectedTheme.assets.pack}
+              className="pack-wrapper__artwork"
+            />
           </div>
         )}
 
@@ -818,8 +1056,8 @@ export function PackSimulatorPage() {
             selectedSetAvailability?.available === null && (
               <div className="pack-error" role="alert">
                 <p>
-                  TCGdex could not verify this set just now. Its artwork has
-                  not been marked missing; try checking again.
+                  TCGdex could not verify this set just now. Its artwork has not
+                  been marked missing; try checking again.
                 </p>
                 <button
                   className="pack-button pack-button--secondary"
@@ -895,17 +1133,16 @@ export function PackSimulatorPage() {
                     {godPackPeriodLabel(godPackWindowDays)} in a rolling window.
                     {godPackFreeCredits > 0 && (
                       <> You have a free God Pack credit for this set.</>
-                    )}
-                    {" "}Complete a standard pack while signed in for a 1 in
-                    1,000 chance to unlock a free God Pack for this set. One
-                    unspent credit can be held per set, and free openings count
-                    toward the limit.
+                    )}{" "}
+                    Complete a standard pack while signed in for a 1 in 1,000
+                    chance to unlock a free God Pack for this set. One unspent
+                    credit can be held per set, and free openings count toward
+                    the limit.
                     {godPackStatus?.availableAt && (
                       <>
                         {" "}
-                        Next available {new Date(
-                          godPackStatus.availableAt,
-                        ).toLocaleString()}.
+                        Next available{" "}
+                        {new Date(godPackStatus.availableAt).toLocaleString()}.
                       </>
                     )}
                   </span>
@@ -958,8 +1195,28 @@ export function PackSimulatorPage() {
               {revealed} / {pack.length} cards placed at the back
             </span>
           </div>
+          {allRevealed && newlyUnlockedThemeIds.length > 0 && (
+            <div className="pack-theme-unlock" role="status">
+              <span className="pack-theme-unlock__seal" aria-hidden="true">✦</span>
+              <div>
+                <p className="eyebrow">VAULT REWARD UNLOCKED</p>
+                {newlyUnlockedThemeIds.map((themeId) => {
+                  const theme = PACK_THEMES.find((item) => item.id === themeId);
+                  return theme ? <strong key={theme.id}>{theme.name}</strong> : null;
+                })}
+                <small>Choose it from your account customisation settings.</small>
+              </div>
+              <Link className="pack-button pack-button--secondary" to="/account">
+                View themes
+              </Link>
+            </div>
+          )}
           {allRevealed && (
-            <div className="pack-table" role="list" aria-label="Your cards">
+            <div
+              className={`pack-table pack-table--${tableThemeStyle}`}
+              role="list"
+              aria-label="Your cards"
+            >
               {pack.map((card, index) => (
                 <DealtCard
                   key={`${packsOpened}-${index}-${card.id}`}
@@ -1026,6 +1283,11 @@ export function PackSimulatorPage() {
           setName={catalogue.set.name}
           cards={collectionCards}
           collectedIds={collectedIds}
+          rarityByCardId={rarityByCardId}
+          displayId={collectionDisplayId}
+          displayChoices={collectionDisplayChoices}
+          disabled={savingProgress}
+          onDisplayChange={(id) => void changeCollectionDisplay(id)}
         />
       )}
     </PageFrame>

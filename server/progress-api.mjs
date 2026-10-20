@@ -6,6 +6,8 @@ import { isIP } from "node:net";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 import packSetConfig from "../config/pack-sets.json" with { type: "json" };
+import cosmeticConfig from "../config/cosmetics.json" with { type: "json" };
+import packThemeConfig from "../docs/cees-card-vault-themes/themes.json" with { type: "json" };
 
 const PORT = Number(process.env.PORT ?? 3002);
 const DATABASE_FILE = resolve(
@@ -70,8 +72,35 @@ const GOD_PACK_DEFAULT_LIMIT = 1;
 const GOD_PACK_DEFAULT_WINDOW_DAYS = 7;
 const GOD_PACK_FREE_UNLOCK_CHANCE = 1 / 1_000;
 const PACK_SET_DEFINITIONS = packSetConfig;
+const COSMETIC_DEFINITIONS = cosmeticConfig;
+const PACK_THEMES = packThemeConfig.themes;
+const THEME_ENERGY_TYPES = new Set([
+  "Grass",
+  "Fire",
+  "Water",
+  "Lightning",
+  "Psychic",
+  "Fighting",
+  "Darkness",
+  "Metal",
+  "Dragon",
+  "Colorless",
+  "Fairy",
+]);
+const COSMETIC_CATEGORIES = [
+  "tableTheme",
+  "profileBadge",
+  "collectionDisplay",
+];
+const MASTERY_RANKS = [
+  { id: "explorer", label: "Explorer", percent: 25 },
+  { id: "collector", label: "Collector", percent: 50 },
+  { id: "archivist", label: "Archivist", percent: 75 },
+  { id: "master", label: "Master", percent: 100 },
+];
 let PACK_SETS = PACK_SET_DEFINITIONS;
 const setAvailabilityCache = new Map();
+let setAvailabilityPromise = null;
 const authAttempts = new Map();
 const authWindowMs = 15 * 60 * 1000;
 const authAttemptLimit = 12;
@@ -143,6 +172,50 @@ database.exec(`
     PRIMARY KEY(user_id, achievement_id)
   ) STRICT;
 
+  CREATE TABLE IF NOT EXISTS user_cosmetic_unlocks (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cosmetic_id TEXT NOT NULL,
+    unlock_source TEXT NOT NULL,
+    unlocked_at TEXT NOT NULL,
+    PRIMARY KEY(user_id, cosmetic_id)
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS user_cosmetic_equipment (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category TEXT NOT NULL CHECK(category IN ('wrapper', 'cardBack', 'tableTheme', 'profileBadge', 'collectionDisplay')),
+    cosmetic_id TEXT NOT NULL,
+    equipped_at TEXT NOT NULL,
+    PRIMARY KEY(user_id, category)
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS user_pack_theme_progress (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    packs_opened INTEGER NOT NULL DEFAULT 0 CHECK(packs_opened >= 0),
+    cards_by_energy_type_json TEXT NOT NULL DEFAULT '{}',
+    cards_by_rarity_json TEXT NOT NULL DEFAULT '{}',
+    pack_open_dates_json TEXT NOT NULL DEFAULT '[]'
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS user_pack_theme_unlocks (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    theme_id TEXT NOT NULL,
+    unlocked_at TEXT NOT NULL,
+    PRIMARY KEY(user_id, theme_id)
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS user_pack_theme_selection (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    theme_id TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS tcgdex_set_catalogues (
+    set_id TEXT PRIMARY KEY,
+    checked_at TEXT NOT NULL,
+    available INTEGER NOT NULL CHECK(available IN (0, 1)),
+    card_ids_json TEXT NOT NULL
+  ) STRICT;
+
   CREATE TABLE IF NOT EXISTS pack_sessions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -196,6 +269,7 @@ database.exec(`
     card_id TEXT NOT NULL,
     rarity TEXT NOT NULL,
     finish TEXT NOT NULL CHECK(finish IN ('normal', 'holo', 'reverse')),
+    energy_types_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     PRIMARY KEY(pack_id, position)
   ) STRICT;
@@ -222,6 +296,15 @@ database.exec(`
   CREATE INDEX IF NOT EXISTS admin_audit_created_idx
     ON admin_audit_log(created_at DESC);
 `);
+
+const revealColumns = new Set(
+  database.prepare("PRAGMA table_info(pack_reveals)").all().map((row) => row.name),
+);
+if (!revealColumns.has("energy_types_json")) {
+  database.exec(
+    "ALTER TABLE pack_reveals ADD COLUMN energy_types_json TEXT NOT NULL DEFAULT '[]'",
+  );
+}
 
 function ensureColumn(tableName, columnName, definition) {
   const columns = database.prepare(`PRAGMA table_info(${tableName})`).all();
@@ -321,8 +404,7 @@ if (
     );
     rows.forEach((row, index) => {
       updateGodPackDefaults.run(
-        GOD_PACK_BASE_XP_COST +
-          Math.floor(index / 3) * GOD_PACK_XP_COST_STEP,
+        GOD_PACK_BASE_XP_COST + Math.floor(index / 3) * GOD_PACK_XP_COST_STEP,
         GOD_PACK_DEFAULT_LIMIT,
         GOD_PACK_DEFAULT_WINDOW_DAYS,
         row.set_id,
@@ -360,11 +442,39 @@ function getConfiguredPackSets() {
     godPackLimit:
       settings.get(set.id)?.god_pack_limit ?? GOD_PACK_DEFAULT_LIMIT,
     godPackWindowDays:
-      settings.get(set.id)?.god_pack_window_days ?? GOD_PACK_DEFAULT_WINDOW_DAYS,
+      settings.get(set.id)?.god_pack_window_days ??
+      GOD_PACK_DEFAULT_WINDOW_DAYS,
   })).sort((left, right) => left.sortOrder - right.sortOrder);
 }
 
 PACK_SETS = getConfiguredPackSets();
+
+const cachedSetCatalogues = database
+  .prepare(
+    "SELECT set_id, checked_at, available, card_ids_json FROM tcgdex_set_catalogues",
+  )
+  .all();
+for (const row of cachedSetCatalogues) {
+  const set = PACK_SET_DEFINITIONS.find(
+    (candidate) => candidate.id === row.set_id,
+  );
+  if (!set) continue;
+  try {
+    const cardIds = JSON.parse(row.card_ids_json);
+    if (!Array.isArray(cardIds)) continue;
+    setAvailabilityCache.set(row.set_id, {
+      checkedAt: Date.parse(row.checked_at) || 0,
+      cardIds: new Set(cardIds.filter((id) => typeof id === "string")),
+      result: {
+        setId: set.id,
+        name: set.name,
+        available: row.available === 1,
+      },
+    });
+  } catch {
+    // Ignore corrupted cache rows and refresh them from TCGdex on demand.
+  }
+}
 
 const PROGRESSION_ORDER_RESET_ID = "2026-10-pack-order-xp-reset-v1";
 if (
@@ -470,6 +580,53 @@ const statement = {
   addAchievement: database.prepare(
     "INSERT OR IGNORE INTO user_achievements (user_id, achievement_id, earned_at) VALUES (?, ?, ?)",
   ),
+  listCosmeticUnlocks: database.prepare(
+    "SELECT cosmetic_id, unlock_source, unlocked_at FROM user_cosmetic_unlocks WHERE user_id = ? ORDER BY unlocked_at, cosmetic_id",
+  ),
+  hasCosmeticUnlock: database.prepare(
+    "SELECT 1 AS unlocked FROM user_cosmetic_unlocks WHERE user_id = ? AND cosmetic_id = ?",
+  ),
+  addCosmeticUnlock: database.prepare(
+    "INSERT OR IGNORE INTO user_cosmetic_unlocks (user_id, cosmetic_id, unlock_source, unlocked_at) VALUES (?, ?, ?, ?)",
+  ),
+  getPackThemeProgress: database.prepare(
+    "SELECT * FROM user_pack_theme_progress WHERE user_id = ?",
+  ),
+  insertPackThemeProgress: database.prepare(
+    "INSERT OR IGNORE INTO user_pack_theme_progress (user_id) VALUES (?)",
+  ),
+  updatePackThemeProgress: database.prepare(
+    `UPDATE user_pack_theme_progress
+     SET packs_opened = ?, cards_by_energy_type_json = ?, cards_by_rarity_json = ?, pack_open_dates_json = ?
+     WHERE user_id = ?`,
+  ),
+  listPackThemeUnlocks: database.prepare(
+    "SELECT theme_id, unlocked_at FROM user_pack_theme_unlocks WHERE user_id = ? ORDER BY unlocked_at, theme_id",
+  ),
+  addPackThemeUnlock: database.prepare(
+    "INSERT OR IGNORE INTO user_pack_theme_unlocks (user_id, theme_id, unlocked_at) VALUES (?, ?, ?)",
+  ),
+  getSelectedPackTheme: database.prepare(
+    "SELECT theme_id FROM user_pack_theme_selection WHERE user_id = ?",
+  ),
+  setSelectedPackTheme: database.prepare(
+    `INSERT INTO user_pack_theme_selection (user_id, theme_id, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET theme_id = excluded.theme_id, updated_at = excluded.updated_at`,
+  ),
+  listCosmeticEquipment: database.prepare(
+    "SELECT category, cosmetic_id FROM user_cosmetic_equipment WHERE user_id = ?",
+  ),
+  getCosmeticEquipment: database.prepare(
+    "SELECT cosmetic_id FROM user_cosmetic_equipment WHERE user_id = ? AND category = ?",
+  ),
+  setCosmeticEquipment: database.prepare(
+    `INSERT INTO user_cosmetic_equipment (user_id, category, cosmetic_id, equipped_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, category) DO UPDATE SET
+       cosmetic_id = excluded.cosmetic_id,
+       equipped_at = excluded.equipped_at`,
+  ),
   getPack: database.prepare(
     "SELECT * FROM pack_sessions WHERE id = ? AND user_id = ?",
   ),
@@ -508,10 +665,10 @@ const statement = {
     "SELECT 1 AS awarded FROM god_pack_free_credits WHERE source_pack_id = ?",
   ),
   insertReveal: database.prepare(
-    "INSERT INTO pack_reveals (pack_id, position, card_id, rarity, finish, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO pack_reveals (pack_id, position, card_id, rarity, finish, energy_types_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ),
   getReveal: database.prepare(
-    "SELECT card_id, rarity, finish FROM pack_reveals WHERE pack_id = ? AND position = ?",
+    "SELECT card_id, rarity, finish, energy_types_json FROM pack_reveals WHERE pack_id = ? AND position = ?",
   ),
   updatePack: database.prepare(
     "UPDATE pack_sessions SET revealed_count = ?, complete = ?, completed_at = ? WHERE id = ?",
@@ -763,12 +920,394 @@ function rollsFreeGodPackUnlock() {
   return roll < GOD_PACK_FREE_UNLOCK_CHANCE;
 }
 
+function userSetMastery(userId) {
+  const collectedBySet = new Map();
+  for (const row of statement.listCollection.all(userId)) {
+    const collected = collectedBySet.get(row.set_id) ?? new Set();
+    collected.add(row.card_id);
+    collectedBySet.set(row.set_id, collected);
+  }
+
+  return PACK_SETS.map((set) => {
+    const catalogue = setAvailabilityCache.get(set.id);
+    const available = catalogue?.result.available === true;
+    const totalCards = available ? catalogue.cardIds.size : null;
+    const collectedIds = collectedBySet.get(set.id) ?? new Set();
+    const collectedCards = available
+      ? [...collectedIds].filter((cardId) => catalogue.cardIds.has(cardId))
+          .length
+      : 0;
+    const percent = totalCards
+      ? Math.min(100, Math.floor((collectedCards / totalCards) * 100))
+      : 0;
+    const rank = [...MASTERY_RANKS]
+      .reverse()
+      .find((candidate) => available && percent >= candidate.percent);
+    return {
+      setId: set.id,
+      name: set.name,
+      available,
+      collectedCards,
+      totalCards,
+      percent,
+      rank: rank?.id ?? null,
+      rankLabel: rank?.label ?? null,
+    };
+  });
+}
+
+function syncMasteryAchievements(userId, masteries) {
+  if (masteries.some((mastery) => mastery.collectedCards > 0)) {
+    awardAchievement(userId, "first-card-ever", 0);
+  }
+
+  for (const mastery of masteries) {
+    if (!mastery.available || !mastery.totalCards) continue;
+    for (const rank of MASTERY_RANKS) {
+      if (mastery.percent >= rank.percent) {
+        awardAchievement(userId, `set-mastery:${mastery.setId}:${rank.id}`, 0);
+      }
+    }
+  }
+  if (masteries.some((mastery) => mastery.rank === "master")) {
+    awardAchievement(userId, "first-set-master", 0);
+  }
+}
+
+function syncCosmeticUnlocks(userId, masteries) {
+  const achievements = new Set(
+    statement.listAchievements.all(userId).map((row) => row.achievement_id),
+  );
+  const unlockedMasteryRanks = new Set(
+    masteries.flatMap((mastery) => {
+      const rankIndex = MASTERY_RANKS.findIndex(
+        (rank) => rank.id === mastery.rank,
+      );
+      return rankIndex < 0
+        ? []
+        : MASTERY_RANKS.slice(0, rankIndex + 1).map((rank) => rank.id);
+    }),
+  );
+  const now = new Date().toISOString();
+
+  for (const cosmetic of COSMETIC_DEFINITIONS) {
+    const { unlock } = cosmetic;
+    const earned =
+      unlock.type === "default" ||
+      (unlock.type === "achievement" && achievements.has(unlock.id)) ||
+      (unlock.type === "mastery" && unlockedMasteryRanks.has(unlock.rank));
+    if (!earned) continue;
+    const source =
+      unlock.type === "achievement"
+        ? `achievement:${unlock.id}`
+        : unlock.type === "mastery"
+          ? `mastery:${unlock.rank}`
+          : "default";
+    statement.addCosmeticUnlock.run(userId, cosmetic.id, source, now);
+  }
+
+  for (const category of COSMETIC_CATEGORIES) {
+    const defaultCosmetic = COSMETIC_DEFINITIONS.find(
+      (cosmetic) =>
+        cosmetic.category === category && cosmetic.unlock.type === "default",
+    );
+    if (!defaultCosmetic) continue;
+    statement.addCosmeticUnlock.run(userId, defaultCosmetic.id, "default", now);
+    if (!statement.getCosmeticEquipment.get(userId, category)) {
+      statement.setCosmeticEquipment.run(
+        userId,
+        category,
+        defaultCosmetic.id,
+        now,
+      );
+    }
+  }
+}
+
+function safeJsonValue(value, fallback) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function ensurePackThemeState(userId) {
+  statement.insertPackThemeProgress.run(userId);
+  const now = new Date().toISOString();
+  const defaultTheme = packThemeConfig.defaultThemeId;
+  statement.addPackThemeUnlock.run(userId, defaultTheme, now);
+  if (!statement.getSelectedPackTheme.get(userId)) {
+    statement.setSelectedPackTheme.run(userId, defaultTheme, now);
+  }
+}
+
+function readPackThemeStats(userId) {
+  ensurePackThemeState(userId);
+  const row = statement.getPackThemeProgress.get(userId);
+  return {
+    packsOpened: row?.packs_opened ?? 0,
+    cardsByEnergyType: safeJsonValue(row?.cards_by_energy_type_json ?? "{}", {}),
+    cardsByRarity: safeJsonValue(row?.cards_by_rarity_json ?? "{}", {}),
+    packOpenDates: safeJsonValue(row?.pack_open_dates_json ?? "[]", []),
+  };
+}
+
+function evaluatePackThemeUnlock(theme, stats, unlockedThemeIds) {
+  const unlock = theme.unlock;
+  switch (unlock.type) {
+    case "default":
+      return true;
+    case "packs_opened":
+      return stats.packsOpened >= unlock.count;
+    case "cards_pulled_by_energy_type":
+      return (stats.cardsByEnergyType[unlock.energyType] ?? 0) >= unlock.count;
+    case "distinct_days_with_pack_open":
+      return stats.packOpenDates.length >= unlock.count;
+    case "rarity_pulled":
+      return (stats.cardsByRarity[unlock.rarity] ?? 0) >= unlock.count;
+    case "themes_unlocked":
+      return unlock.themeIds.every((id) => unlockedThemeIds.has(id));
+    default:
+      return false;
+  }
+}
+
+function syncPackThemeUnlocks(userId) {
+  const stats = readPackThemeStats(userId);
+  const unlockedThemeIds = new Set(
+    statement.listPackThemeUnlocks.all(userId).map((row) => row.theme_id),
+  );
+  const newlyUnlocked = [];
+  for (const theme of PACK_THEMES) {
+    if (
+      !unlockedThemeIds.has(theme.id) &&
+      evaluatePackThemeUnlock(theme, stats, unlockedThemeIds)
+    ) {
+      const result = statement.addPackThemeUnlock.run(
+        userId,
+        theme.id,
+        new Date().toISOString(),
+      );
+      if (result.changes > 0) {
+        unlockedThemeIds.add(theme.id);
+        newlyUnlocked.push(theme.id);
+      }
+    }
+  }
+  return newlyUnlocked;
+}
+
+function packThemeProgress(theme, stats, unlockedThemeIds) {
+  const unlock = theme.unlock;
+  switch (unlock.type) {
+    case "default":
+      return { current: 1, target: 1, label: "Available from the start" };
+    case "packs_opened":
+      return {
+        current: Math.min(stats.packsOpened, unlock.count),
+        target: unlock.count,
+        label: `${Math.min(stats.packsOpened, unlock.count)} / ${unlock.count} packs`,
+      };
+    case "cards_pulled_by_energy_type": {
+      const current = Math.min(
+        stats.cardsByEnergyType[unlock.energyType] ?? 0,
+        unlock.count,
+      );
+      return {
+        current,
+        target: unlock.count,
+        label: `${current} / ${unlock.count} ${unlock.energyType} type cards`,
+      };
+    }
+    case "distinct_days_with_pack_open": {
+      const current = Math.min(stats.packOpenDates.length, unlock.count);
+      return {
+        current,
+        target: unlock.count,
+        label: `${current} / ${unlock.count} different days`,
+      };
+    }
+    case "rarity_pulled": {
+      const current = Math.min(
+        stats.cardsByRarity[unlock.rarity] ?? 0,
+        unlock.count,
+      );
+      return {
+        current,
+        target: unlock.count,
+        label: `${current} / ${unlock.count} holo rares`,
+      };
+    }
+    case "themes_unlocked": {
+      const current = unlock.themeIds.filter((id) => unlockedThemeIds.has(id)).length;
+      return {
+        current,
+        target: unlock.themeIds.length,
+        label: `${current} / ${unlock.themeIds.length} themes unlocked`,
+      };
+    }
+    default:
+      return { current: 0, target: 1, label: theme.unlockText };
+  }
+}
+
+function packThemeProfile(userId) {
+  ensurePackThemeState(userId);
+  syncPackThemeUnlocks(userId);
+  const stats = readPackThemeStats(userId);
+  const unlockRows = statement.listPackThemeUnlocks.all(userId);
+  const unlockedAt = new Map(
+    unlockRows.map((row) => [row.theme_id, row.unlocked_at]),
+  );
+  const unlockedThemeIds = new Set(unlockedAt.keys());
+  const selectedThemeId = statement.getSelectedPackTheme.get(userId)?.theme_id;
+  return {
+    selectedThemeId: unlockedThemeIds.has(selectedThemeId)
+      ? selectedThemeId
+      : packThemeConfig.defaultThemeId,
+    themes: PACK_THEMES.map((theme) => ({
+      id: theme.id,
+      order: theme.order,
+      name: theme.name,
+      tier: theme.tier,
+      tagline: theme.tagline,
+      unlockText: theme.unlockText,
+      palette: theme.palette,
+      assets: theme.assets,
+      unlocked: unlockedThemeIds.has(theme.id),
+      unlockedAt: unlockedAt.get(theme.id) ?? null,
+      progress: packThemeProgress(theme, stats, unlockedThemeIds),
+    })),
+  };
+}
+
+function recordPackThemeOpen(userId, localDate) {
+  const stats = readPackThemeStats(userId);
+  const openDates = new Set(stats.packOpenDates);
+  openDates.add(localDate);
+  const row = statement.getPackThemeProgress.get(userId);
+  statement.updatePackThemeProgress.run(
+    (row?.packs_opened ?? 0) + 1,
+    row?.cards_by_energy_type_json ?? "{}",
+    row?.cards_by_rarity_json ?? "{}",
+    JSON.stringify([...openDates].sort()),
+    userId,
+  );
+}
+
+function recordPackThemePull(userId, energyTypes, rarity, finish) {
+  const stats = readPackThemeStats(userId);
+  for (const energyType of energyTypes) {
+    stats.cardsByEnergyType[energyType] =
+      (stats.cardsByEnergyType[energyType] ?? 0) + 1;
+  }
+  const rarityKey = `${rarity}:${finish}`;
+  stats.cardsByRarity[rarityKey] = (stats.cardsByRarity[rarityKey] ?? 0) + 1;
+  if (rarity === "rare" && finish === "holo") {
+    stats.cardsByRarity.holo_rare = (stats.cardsByRarity.holo_rare ?? 0) + 1;
+  }
+  const row = statement.getPackThemeProgress.get(userId);
+  statement.updatePackThemeProgress.run(
+    row?.packs_opened ?? 0,
+    JSON.stringify(stats.cardsByEnergyType),
+    JSON.stringify(stats.cardsByRarity),
+    JSON.stringify(stats.packOpenDates),
+    userId,
+  );
+}
+
+function packOpenLocalDate(timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function equippedCosmetics(userId) {
+  const unlockedIds = new Set(
+    statement.listCosmeticUnlocks.all(userId).map((row) => row.cosmetic_id),
+  );
+  const equipped = Object.fromEntries(
+    COSMETIC_CATEGORIES.map((category) => {
+      const defaultItem = COSMETIC_DEFINITIONS.find(
+        (item) => item.category === category && item.unlock.type === "default",
+      );
+      return [category, defaultItem?.id ?? ""];
+    }),
+  );
+  for (const row of statement.listCosmeticEquipment.all(userId)) {
+    if (
+      COSMETIC_CATEGORIES.includes(row.category) &&
+      unlockedIds.has(row.cosmetic_id)
+    )
+      equipped[row.category] = row.cosmetic_id;
+  }
+  return { unlocked: [...unlockedIds], equipped };
+}
+
+function cosmeticUnlockDescription(cosmetic) {
+  if (cosmetic.unlock.type === "default") return "Available from the start";
+  if (cosmetic.unlock.type === "mastery") {
+    const rank = MASTERY_RANKS.find(
+      (candidate) => candidate.id === cosmetic.unlock.rank,
+    );
+    return `Reach ${rank?.label ?? cosmetic.unlock.rank} mastery in any set`;
+  }
+  const descriptions = {
+    "first-shiny": "Reveal your first holo or reverse card",
+    "first-full-art": "Reveal your first full-art card",
+    "first-card-ever": "Collect your first card",
+    "seven-day-streak": "Reach a seven-day pack streak",
+  };
+  return descriptions[cosmetic.unlock.id] ?? "Complete a collection milestone";
+}
+
+function cosmeticProfile(user) {
+  const account = snapshot(user);
+  const unlockedRows = statement.listCosmeticUnlocks.all(user.id);
+  const unlockedById = new Map(
+    unlockedRows.map((row) => [row.cosmetic_id, row.unlocked_at]),
+  );
+  return {
+    account,
+    mastery: account.progression.mastery,
+    items: COSMETIC_DEFINITIONS.map((cosmetic) => ({
+      id: cosmetic.id,
+      category: cosmetic.category,
+      name: cosmetic.name,
+      description: cosmetic.description,
+      style: cosmetic.style,
+      unlockDescription: cosmeticUnlockDescription(cosmetic),
+      unlocked: unlockedById.has(cosmetic.id),
+      unlockedAt: unlockedById.get(cosmetic.id) ?? null,
+      equipped:
+        account.progression.cosmetics.equipped[cosmetic.category] ===
+        cosmetic.id,
+    })),
+  };
+}
+
 function snapshot(user) {
   const progress = statement.getProgress.get(user.id);
+  const mastery = userSetMastery(user.id);
+  syncMasteryAchievements(user.id, mastery);
   const today = new Date().toISOString().slice(0, 10);
   const streakIsActive =
     progress?.last_activity_date === today ||
     progress?.last_activity_date === yesterdayUtc(today);
+  if (streakIsActive && (progress?.streak_days ?? 0) >= 7) {
+    awardAchievement(user.id, "seven-day-streak", 0);
+  }
+  syncCosmeticUnlocks(user.id, mastery);
   const collections = {};
   for (const row of statement.listCollection.all(user.id)) {
     (collections[row.set_id] ??= []).push(row.card_id);
@@ -795,6 +1334,8 @@ function snapshot(user) {
         unlockedAt: row.unlocked_at,
       })),
       collections,
+      mastery,
+      cosmetics: equippedCosmetics(user.id),
       achievements: statement.listAchievements.all(user.id).map((row) => ({
         id: row.achievement_id,
         earnedAt: row.earned_at,
@@ -851,6 +1392,7 @@ function claimDailyStreak(userId) {
     new Date().toISOString(),
     userId,
   );
+  if (streakDays >= 7) awardAchievement(userId, "seven-day-streak", 0);
   return { xp, streakDays, claimed: true, date: today };
 }
 
@@ -871,6 +1413,16 @@ async function fetchSetMetadata(setId) {
 }
 
 async function getSetAvailability() {
+  if (setAvailabilityPromise) return setAvailabilityPromise;
+  setAvailabilityPromise = refreshSetAvailability();
+  try {
+    return await setAvailabilityPromise;
+  } finally {
+    setAvailabilityPromise = null;
+  }
+}
+
+async function refreshSetAvailability() {
   PACK_SETS = getConfiguredPackSets();
   const now = Date.now();
   const allFresh = PACK_SETS.every((set) => {
@@ -911,23 +1463,40 @@ async function getSetAvailability() {
                   card.image.startsWith("https://assets.tcgdex.net/"),
               ),
           );
+          const cardIds = new Set(
+            allRecords.flatMap((record) =>
+              Array.isArray(record?.cards)
+                ? record.cards
+                    .map((card) => card.id)
+                    .filter((id) => typeof id === "string")
+                : [],
+            ),
+          );
           setAvailabilityCache.set(set.id, {
             checkedAt: now,
-            cardIds: new Set(
-              allRecords.flatMap((record) =>
-                Array.isArray(record?.cards)
-                  ? record.cards
-                      .map((card) => card.id)
-                      .filter((id) => typeof id === "string")
-                  : [],
-              ),
-            ),
+            cardIds,
             result: {
               setId: set.id,
               name: set.name,
               available,
             },
           });
+          database
+            .prepare(
+              `INSERT INTO tcgdex_set_catalogues
+                 (set_id, checked_at, available, card_ids_json)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(set_id) DO UPDATE SET
+                 checked_at = excluded.checked_at,
+                 available = excluded.available,
+                 card_ids_json = excluded.card_ids_json`,
+            )
+            .run(
+              set.id,
+              new Date(now).toISOString(),
+              available ? 1 : 0,
+              JSON.stringify([...cardIds]),
+            );
         } catch {
           const previous = setAvailabilityCache.get(set.id);
           setAvailabilityCache.set(set.id, {
@@ -976,7 +1545,9 @@ function validateProfile(firstName, avatar) {
 }
 
 function availableSet(setId, availability) {
-  return availability.find((set) => set.setId === setId && set.available === true);
+  return availability.find(
+    (set) => set.setId === setId && set.available === true,
+  );
 }
 
 function setAvailabilityFor(setId, availability) {
@@ -1467,6 +2038,7 @@ const server = createServer(async (request, response) => {
           );
           statement.insertProgress.run(userId, now);
           statement.insertUnlock.run(userId, PACK_SETS[0].id, now);
+          ensurePackThemeState(userId);
         });
       } catch (error) {
         if (
@@ -1552,6 +2124,79 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && path === "/api/account/cosmetics") {
+      const user = requireAuthenticated(request, response);
+      if (!user) return;
+      await getSetAvailability();
+      sendJson(response, 200, cosmeticProfile(user));
+      return;
+    }
+
+    if (request.method === "GET" && path === "/api/account/pack-themes") {
+      const user = requireAuthenticated(request, response);
+      if (!user) return;
+      sendJson(response, 200, packThemeProfile(user.id));
+      return;
+    }
+
+    if (request.method === "POST" && path === "/api/account/pack-themes/select") {
+      const user = requireAuthenticated(request, response);
+      if (!user) return;
+      const body = await readJson(request);
+      const themeId = typeof body.themeId === "string" ? body.themeId : "";
+      if (
+        !PACK_THEMES.some((theme) => theme.id === themeId) ||
+        !statement.listPackThemeUnlocks
+          .all(user.id)
+          .some((row) => row.theme_id === themeId)
+      ) {
+        throw apiError("That pack theme has not been unlocked.", 403, "theme_locked");
+      }
+      statement.setSelectedPackTheme.run(user.id, themeId, new Date().toISOString());
+      sendJson(response, 200, packThemeProfile(user.id));
+      return;
+    }
+
+    if (request.method === "POST" && path === "/api/account/cosmetics/equip") {
+      const user = requireAuthenticated(request, response);
+      if (!user) return;
+      const body = await readJson(request);
+      const category = body.category;
+      const cosmeticId = body.cosmeticId;
+      if (
+        typeof category !== "string" ||
+        !COSMETIC_CATEGORIES.includes(category) ||
+        typeof cosmeticId !== "string"
+      ) {
+        throw apiError(
+          "Choose a valid cosmetic to equip.",
+          400,
+          "invalid_cosmetic",
+        );
+      }
+      snapshot(user);
+      const cosmetic = COSMETIC_DEFINITIONS.find(
+        (item) => item.id === cosmeticId && item.category === category,
+      );
+      if (!cosmetic || !statement.hasCosmeticUnlock.get(user.id, cosmeticId)) {
+        throw apiError(
+          "That cosmetic has not been unlocked.",
+          403,
+          "cosmetic_locked",
+        );
+      }
+      statement.setCosmeticEquipment.run(
+        user.id,
+        category,
+        cosmeticId,
+        new Date().toISOString(),
+      );
+      sendJson(response, 200, {
+        account: snapshot(statement.findUserById.get(user.id)),
+      });
+      return;
+    }
+
     if (request.method === "PATCH" && path === "/api/account/profile") {
       const user = requireAuthenticated(request, response);
       if (!user) return;
@@ -1632,11 +2277,13 @@ const server = createServer(async (request, response) => {
         for (const [setId, cardIds] of Object.entries(body.collections)) {
           if (!availableSet(setId, available) || !Array.isArray(cardIds))
             continue;
+          const canonicalCardIds = setAvailabilityCache.get(setId)?.cardIds;
           for (const cardId of cardIds.slice(0, 500)) {
             if (
               typeof cardId !== "string" ||
               !validCardId(setId, cardId) ||
-              cardId.startsWith("sim-energy-")
+              cardId.startsWith("sim-energy-") ||
+              !canonicalCardIds?.has(cardId)
             )
               continue;
             imported += statement.addCollectionCard.run(
@@ -1704,6 +2351,7 @@ const server = createServer(async (request, response) => {
       const setId = typeof body.setId === "string" ? body.setId : "";
       const totalCards = Number(body.totalCards);
       const packType = body.packType === "god" ? "god" : "standard";
+      const localDate = packOpenLocalDate(body.timeZone);
       const configuredSet = PACK_SETS.find((set) => set.id === setId);
       if (
         !configuredSet ||
@@ -1789,6 +2437,7 @@ const server = createServer(async (request, response) => {
           packType,
           new Date().toISOString(),
         );
+        recordPackThemeOpen(user.id, localDate);
         if (packType === "god") {
           const purchasedAt = new Date().toISOString();
           statement.insertGodPackPurchase.run(
@@ -1826,6 +2475,9 @@ const server = createServer(async (request, response) => {
       const cardId = typeof body.cardId === "string" ? body.cardId : "";
       const rarity = typeof body.rarity === "string" ? body.rarity : "";
       const finish = typeof body.finish === "string" ? body.finish : "";
+      const energyTypes = Array.isArray(body.energyTypes)
+        ? [...new Set(body.energyTypes.filter((type) => THEME_ENERGY_TYPES.has(type)))]
+        : [];
       if (
         !Number.isInteger(position) ||
         position < 0 ||
@@ -1861,6 +2513,7 @@ const server = createServer(async (request, response) => {
             godPackAwarded: Boolean(
               statement.hasGodPackAwardFromPack.get(packId),
             ),
+            newThemesUnlocked: [],
             account: snapshot(statement.findUserById.get(user.id)),
           });
           return;
@@ -1918,8 +2571,10 @@ const server = createServer(async (request, response) => {
           cardId,
           rarity,
           finish,
+          JSON.stringify(energyTypes),
           now,
         );
+        recordPackThemePull(user.id, energyTypes, rarity, finish);
         if (position === 0) reward("first-card", "First card revealed", 1);
         if (!cardId.startsWith("sim-energy-")) {
           const collected = statement.addCollectionCard.run(
@@ -1952,10 +2607,8 @@ const server = createServer(async (request, response) => {
         if (complete) {
           reward("pack-complete", "Pack completed", 3);
           const hasUnspentFreeCredit =
-            statement.countAvailableGodPackCredits.get(
-              user.id,
-              pack.set_id,
-            ).count > 0;
+            statement.countAvailableGodPackCredits.get(user.id, pack.set_id)
+              .count > 0;
           if (
             pack.pack_type === "standard" &&
             !hasUnspentFreeCredit &&
@@ -1977,7 +2630,16 @@ const server = createServer(async (request, response) => {
           complete ? now : null,
           packId,
         );
-        return { earnedXp, rewards, complete, godPackAwarded };
+        const newThemesUnlocked = complete
+          ? syncPackThemeUnlocks(user.id)
+          : [];
+        return {
+          earnedXp,
+          rewards,
+          complete,
+          godPackAwarded,
+          newThemesUnlocked,
+        };
       });
       sendJson(response, 200, {
         ...result,

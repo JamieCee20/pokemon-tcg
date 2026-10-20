@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "series": 1,
+  "defaultThemeId": "vault-classic",
+  "themes": [
+    {
+      "id": "vault-classic",
+      "order": 1,
+      "name": "Vault Classic",
+      "tier": "starter",
+      "tagline": "The house style. Navy steel, brass rivets and the combination dial that guards every pull.",
+      "unlock": {
+        "type": "default"
+      },
+      "unlockText": "Unlocked by default for every new collector.",
+      "palette": {
+        "field": "#14213D",
+        "fieldDeep": "#0E1830",
+        "rim": "#C9A227",
+        "rimShadow": "#8C6E14",
+        "accent": "#C9A227",
+        "light": "#F2E6C2"
+      },
+      "motif": "Riveted steel plate with rings radiating from the dial.",
+      "openingEffect": {
+        "summary": "The dial spins one full turn and clicks before the wrapper splits.",
+        "spec": "Combination dial on the wrapper rotates 360deg (~600ms, ease-out), plays a click, then the wrapper splits along the top crimp."
+      },
+      "assets": {
+        "pack": "assets/packs/vault-classic.svg",
+        "cardBack": "assets/card-backs/vault-classic.svg"
+      },
+      "isDefault": true
+    },
+    {
+      "id": "ember-forge",
+      "order": 2,
+      "name": "Ember Forge",
+      "tier": "common",
+      "tagline": "Molten orange on blackened iron, with heat rising off every seam.",
+      "unlock": {
+        "type": "packs_opened",
+        "count": 25
+      },
+      "unlockText": "Open 25 packs of any theme.",
+      "palette": {
+        "field": "#1C1412",
+        "fieldDeep": "#140E0C",
+        "rim": "#E8622C",
+        "rimShadow": "#9A3A14",
+        "accent": "#E8622C",
+        "light": "#FFC15E"
+      },
+      "motif": "Rising heat chevrons with embers drifting up from the dial.",
+      "openingEffect": {
+        "summary": "Sparks burst from the tear line and card edges glow orange as they flip.",
+        "spec": "Orange spark particles burst from the tear line; each card's edge gets a short orange glow as it flips."
+      },
+      "assets": {
+        "pack": "assets/packs/ember-forge.svg",
+        "cardBack": "assets/card-backs/ember-forge.svg"
+      },
+      "isDefault": false
+    },
+    {
+      "id": "tidal-depths",
+      "order": 3,
+      "name": "Tidal Depths",
+      "tier": "uncommon",
+      "tagline": "Deep teal water with ripples spreading outward from the dial.",
+      "unlock": {
+        "type": "cards_pulled_by_energy_type",
+        "energyType": "Water",
+        "count": 15
+      },
+      "unlockText": "Pull 15 Water-type cards.",
+      "palette": {
+        "field": "#0B2A33",
+        "fieldDeep": "#082027",
+        "rim": "#3FB8AF",
+        "rimShadow": "#1F6F6A",
+        "accent": "#3FB8AF",
+        "light": "#CDEFEA"
+      },
+      "motif": "Concentric ripples layered over a rolling wave print.",
+      "openingEffect": {
+        "summary": "The wrapper dissolves into a ripple and cards surface one by one.",
+        "spec": "Wrapper fades/dissolves outward as an expanding ripple ring from the dial; cards rise in one at a time with a slight vertical float."
+      },
+      "assets": {
+        "pack": "assets/packs/tidal-depths.svg",
+        "cardBack": "assets/card-backs/tidal-depths.svg"
+      },
+      "isDefault": false
+    },
+    {
+      "id": "verdant-grove",
+      "order": 4,
+      "name": "Verdant Grove",
+      "tier": "uncommon",
+      "tagline": "Forest green and parchment, overgrown with a tiled leaf print.",
+      "unlock": {
+        "type": "distinct_days_with_pack_open",
+        "count": 7
+      },
+      "unlockText": "Open packs on 7 different days.",
+      "palette": {
+        "field": "#16301F",
+        "fieldDeep": "#102617",
+        "rim": "#8BC34A",
+        "rimShadow": "#4E7A22",
+        "accent": "#8BC34A",
+        "light": "#E9D8A6"
+      },
+      "motif": "Angled leaf tiles with a parchment-edged dial.",
+      "openingEffect": {
+        "summary": "Vines peel the wrapper open from the corners and leaves drift past the reveal.",
+        "spec": "Wrapper peels from the four corners (vine/leaf motion); a few leaf particles drift across the reveal."
+      },
+      "assets": {
+        "pack": "assets/packs/verdant-grove.svg",
+        "cardBack": "assets/card-backs/verdant-grove.svg"
+      },
+      "isDefault": false
+    },
+    {
+      "id": "storm-circuit",
+      "order": 5,
+      "name": "Storm Circuit",
+      "tier": "rare",
+      "tagline": "Charged yellow traces on graphite, crackling with blue sparks.",
+      "unlock": {
+        "type": "rarity_pulled",
+        "rarity": "holo_rare",
+        "count": 5
+      },
+      "unlockText": "Pull 5 holo rares.",
+      "palette": {
+        "field": "#15161C",
+        "fieldDeep": "#0F1015",
+        "rim": "#F5C518",
+        "rimShadow": "#A88400",
+        "accent": "#F5C518",
+        "light": "#7FD4FF"
+      },
+      "motif": "Circuit-board traces feeding into the dial, with a lightning bolt on the wrapper.",
+      "openingEffect": {
+        "summary": "A bolt cracks across the pack and the screen flashes white on a rare pull.",
+        "spec": "A lightning bolt flash crosses the pack on open; a brief white screen flash plays only when a rare or better is revealed."
+      },
+      "assets": {
+        "pack": "assets/packs/storm-circuit.svg",
+        "cardBack": "assets/card-backs/storm-circuit.svg"
+      },
+      "isDefault": false
+    },
+    {
+      "id": "eclipse-prism",
+      "order": 6,
+      "name": "Eclipse Prism",
+      "tier": "secret",
+      "tagline": "The secret skin. A midnight field, a crescent eclipse and a holo prism rim.",
+      "unlock": {
+        "type": "themes_unlocked",
+        "themeIds": [
+          "vault-classic",
+          "ember-forge",
+          "tidal-depths",
+          "verdant-grove",
+          "storm-circuit"
+        ]
+      },
+      "unlockText": "Unlock all five other themes.",
+      "palette": {
+        "field": "#120E24",
+        "fieldDeep": "#0C0919",
+        "rim": "gradient:#A48CFF,#FF8FC4,#7FD4FF",
+        "rimShadow": "#2A1F55",
+        "accent": "#A48CFF",
+        "light": "#F2EEFF"
+      },
+      "motif": "Starfield and crescent eclipse behind the dial, framed by a prism rim.",
+      "openingEffect": {
+        "summary": "The pack goes dark, then the rim catches light and sweeps holo across every card.",
+        "spec": "Screen dims, the prism rim lights up, and a holographic sheen sweeps across each card as it is revealed."
+      },
+      "assets": {
+        "pack": "assets/packs/eclipse-prism.svg",
+        "cardBack": "assets/card-backs/eclipse-prism.svg"
+      },
+      "isDefault": false
+    }
+  ]
+}

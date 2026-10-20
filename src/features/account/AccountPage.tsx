@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { PageFrame } from "../../components/AppLayout";
@@ -6,6 +13,7 @@ import { useAccount } from "./AccountContext";
 import {
   ACCOUNT_AVATARS,
   changeAccountPassword,
+  getCosmeticProfile,
   getPackSetAvailability,
   importLocalCollection,
   loginAccount,
@@ -14,9 +22,18 @@ import {
   unlockPackSet,
   updateAccountProfile,
 } from "./api";
-import type { AccountAvatar } from "./api";
+import type {
+  AccountAvatar,
+  SetMastery,
+} from "./api";
 import { readPackCollection } from "../packs/collectionStorage";
 import "./AccountPage.css";
+
+const PackThemeSettings = lazy(() =>
+  import("./PackThemeSettings").then((module) => ({
+    default: module.PackThemeSettings,
+  })),
+);
 
 function avatarFor(value: AccountAvatar | null, firstName: string) {
   return value ?? (firstName.trim().slice(0, 1).toUpperCase() || "?");
@@ -68,6 +85,42 @@ function localCollectionCount(collections: Record<string, string[]>) {
   );
 }
 
+const MILESTONE_LABELS: Record<string, string> = {
+  "first-card-ever": "First card collected",
+  "first-shiny": "First holo or reverse card",
+  "first-full-art": "First full-art pull",
+  "seven-day-streak": "Seven-day pack streak",
+  "first-set-master": "First set completed",
+};
+
+function MasteryEmblem({
+  rank,
+  className = "",
+}: {
+  rank: SetMastery["rank"];
+  className?: string;
+}) {
+  const symbols: Record<NonNullable<SetMastery["rank"]>, string> = {
+    explorer: "◇",
+    collector: "✧",
+    archivist: "✥",
+    master: "★",
+  };
+  return (
+    <span
+      className={`mastery-emblem${rank ? ` mastery-emblem--${rank}` : " mastery-emblem--locked"}${className ? ` ${className}` : ""}`}
+      role="img"
+      aria-label={rank ? `${rank} mastery badge` : "Mastery not yet earned"}
+    >
+      <span aria-hidden="true">{rank ? symbols[rank] : "·"}</span>
+    </span>
+  );
+}
+
+function eligibleSetCountForMastery(masteries: SetMastery[]) {
+  return masteries.filter((mastery) => mastery.available).length;
+}
+
 export function AccountPage() {
   const { account, isLoading, error: accountError, setAccount } = useAccount();
   const [mode, setMode] = useState<"login" | "register">("register");
@@ -93,6 +146,14 @@ export function AccountPage() {
     gcTime: 24 * 60 * 60 * 1000,
     retry: false,
   });
+  const cosmeticsQuery = useQuery({
+    queryKey: ["account", "cosmetics", account?.user.id],
+    queryFn: getCosmeticProfile,
+    enabled: account !== null,
+    staleTime: 0,
+    gcTime: 24 * 60 * 60 * 1000,
+    retry: false,
+  });
   const availableSets = setsQuery.data?.filter((set) => set.available) ?? [];
   const unlockedIds = useMemo(
     () =>
@@ -115,6 +176,13 @@ export function AccountPage() {
     setProfileName(account.user.firstName);
     setProfileAvatar(account.user.avatar);
   }, [account?.user.avatar, account?.user.firstName]);
+
+  useEffect(() => {
+    const profileAccount = cosmeticsQuery.data?.account;
+    if (profileAccount && profileAccount.user.id === account?.user.id) {
+      setAccount(profileAccount);
+    }
+  }, [account?.user.id, cosmeticsQuery.data?.account, setAccount]);
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -252,6 +320,19 @@ export function AccountPage() {
     }
   }
 
+  const profileMasteries =
+    cosmeticsQuery.data?.mastery ?? account?.progression.mastery ?? [];
+  const eligibleSetCount = eligibleSetCountForMastery(profileMasteries);
+  const completedSetCount = profileMasteries.filter(
+    (mastery) => mastery.available && mastery.rank === "master",
+  ).length;
+  const unlockedMilestones = (account?.progression.achievements ?? [])
+    .filter((achievement) => MILESTONE_LABELS[achievement.id])
+    .map((achievement) => MILESTONE_LABELS[achievement.id]);
+  const equippedProfileBadge = cosmeticsQuery.data?.items.find(
+    (item) => item.category === "profileBadge" && item.equipped,
+  );
+
   return (
     <PageFrame className="page-frame--account">
       <header className="account-heading">
@@ -261,8 +342,19 @@ export function AccountPage() {
           <p>Save your collection, earn XP, and unlock more pack sets.</p>
         </div>
         {account && (
-          <div className="account-heading__avatar" aria-hidden="true">
-            {avatarFor(account.user.avatar, account.user.firstName)}
+          <div className="account-heading__identity">
+            <div className="account-heading__avatar" aria-hidden="true">
+              {avatarFor(account.user.avatar, account.user.firstName)}
+            </div>
+            {equippedProfileBadge && (
+              <span
+                className={`account-profile-badge account-profile-badge--${equippedProfileBadge.style}`}
+                title={equippedProfileBadge.name}
+              >
+                <span aria-hidden="true">✦</span>
+                {equippedProfileBadge.name}
+              </span>
+            )}
           </div>
         )}
       </header>
@@ -312,6 +404,104 @@ export function AccountPage() {
                 {localCollectionCount(account.progression.collections)}
               </strong>
             </div>
+          </section>
+
+          <section className="account-panel account-mastery-panel">
+            <div className="account-section-heading">
+              <div>
+                <p className="eyebrow">YOUR BADGE CASE</p>
+                <h2>Set mastery and milestones</h2>
+              </div>
+              <span className="account-email">
+                {completedSetCount} of {eligibleSetCount} eligible sets complete
+              </span>
+            </div>
+            {cosmeticsQuery.isPending ? (
+              <p className="account-muted" role="status">
+                Checking your set catalogues…
+              </p>
+            ) : cosmeticsQuery.isError ? (
+              <p className="account-muted" role="alert">
+                Set mastery is temporarily unavailable. Your collection remains
+                saved.
+              </p>
+            ) : (
+              <>
+                <div className="account-mastery-grid" role="list">
+                  {profileMasteries
+                    .filter((mastery) => mastery.available)
+                    .map((mastery) => (
+                      <article
+                        className="account-mastery-card"
+                        role="listitem"
+                        key={mastery.setId}
+                      >
+                        <MasteryEmblem rank={mastery.rank} />
+                        <div>
+                          <strong>{mastery.name}</strong>
+                          <small>
+                            {mastery.rankLabel ?? "In progress"} ·{" "}
+                            {mastery.collectedCards}/{mastery.totalCards} cards
+                          </small>
+                          <div
+                            className="account-mastery-card__progress"
+                            role="progressbar"
+                            aria-label={mastery.name + " mastery"}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={mastery.percent}
+                          >
+                            <span style={{ width: mastery.percent + "%" }} />
+                          </div>
+                        </div>
+                        <span className="account-mastery-card__percent">
+                          {mastery.percent}%
+                        </span>
+                      </article>
+                    ))}
+                </div>
+                {profileMasteries.filter((mastery) => mastery.available)
+                  .length === 0 && (
+                  <p className="account-muted">
+                    No artwork-complete sets are available for mastery yet.
+                  </p>
+                )}
+                <div className="account-milestones">
+                  <h3>Milestone badges</h3>
+                  {unlockedMilestones.length > 0 ? (
+                    <ul>
+                      {unlockedMilestones.map((milestone) => (
+                        <li key={milestone}>
+                          <span aria-hidden="true">✦</span> {milestone}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="account-muted">
+                      Your milestones will appear here as you collect and play.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+
+          <section className="account-panel account-wardrobe">
+            <div className="account-section-heading">
+              <div>
+                <p className="eyebrow">CUSTOMISATION</p>
+                <h2>Pack and card artwork</h2>
+              </div>
+            </div>
+            <Suspense
+              fallback={
+                <p className="account-muted" role="status">
+                  Loading pack and card themes…
+                </p>
+              }
+            >
+              <PackThemeSettings />
+            </Suspense>
           </section>
 
           <section className="account-panel account-rewards">

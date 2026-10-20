@@ -25,6 +25,8 @@ WORKDIR /app
 COPY server/progress-api.mjs ./server/progress-api.mjs
 COPY server/promote-admin.mjs ./server/promote-admin.mjs
 COPY config/pack-sets.json ./config/pack-sets.json
+COPY config/cosmetics.json ./config/cosmetics.json
+COPY docs/cees-card-vault-themes/themes.json ./docs/cees-card-vault-themes/themes.json
 RUN mkdir -p /data && chown node:node /data
 ENV NODE_ENV=production
 ENV ACCOUNT_DB_FILE=/data/account-progress.sqlite

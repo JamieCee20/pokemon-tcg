@@ -25,6 +25,7 @@ export interface CardSummary {
   availableFinishes?: CardFinish[];
   setId: string | null;
   setName: string | null;
+  types?: string[];
 }
 
 export type CardFinish = "normal" | "holo" | "reverse";

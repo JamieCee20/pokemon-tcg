@@ -263,6 +263,7 @@ function mapCardBrief(
     availableFinishes: cardFinishes(value.variants),
     setId,
     setName,
+    types: stringArray(value.types),
   };
 }
 

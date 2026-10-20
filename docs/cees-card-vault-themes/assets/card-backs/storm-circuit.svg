@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="419" viewBox="0 0 300 419" role="img" aria-label="Storm Circuit card back">
+<defs><pattern id="stormcircuit-pb" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M0 20 H12 L20 12 H40 M20 12 V0 M12 20 V40" fill="none" stroke="#F5C518" stroke-opacity="0.26" stroke-width="1.4"/><circle cx="12" cy="20" r="2.2" fill="#F5C518" fill-opacity="0.4"/><circle cx="20" cy="12" r="2.2" fill="#F5C518" fill-opacity="0.4"/></pattern><clipPath id="stormcircuit-cb"><rect x="14" y="14" width="272" height="391" rx="8"/></clipPath></defs>
+<rect width="300" height="419" rx="14" fill="#F5C518"/>
+<rect x="8" y="8" width="284" height="403" rx="10" fill="#A88400"/>
+<rect x="14" y="14" width="272" height="391" rx="8" fill="#15161C"/>
+<g clip-path="url(#stormcircuit-cb)"><rect x="14" y="14" width="272" height="391" fill="url(#stormcircuit-pb)"/><g fill="none" stroke="#7FD4FF" stroke-opacity="0.5" stroke-width="1.4"><circle cx="150" cy="209.5" r="88"/></g></g>
+<g fill="#7FD4FF" fill-opacity="0.7"><rect x="30" y="30" width="7" height="7" transform="rotate(45 33.5 33.5)"/><rect x="263" y="30" width="7" height="7" transform="rotate(45 266.5 33.5)"/><rect x="30" y="382" width="7" height="7" transform="rotate(45 33.5 385.5)"/><rect x="263" y="382" width="7" height="7" transform="rotate(45 266.5 385.5)"/></g>
+<text x="150" y="102" text-anchor="middle" font-family="Bungee, Impact, sans-serif" font-size="20" letter-spacing="4" fill="#7FD4FF">CEE&#8217;S</text>
+<g id="dial" transform="translate(150 209.5)"><circle r="70" fill="#0F1015" stroke="#F5C518" stroke-width="3"/>
+<circle r="58" fill="none" stroke="#F5C518" stroke-width="8" stroke-dasharray="2 13.18"/>
+<circle r="44" fill="#15161C" stroke="#7FD4FF" stroke-width="2"/>
+<g stroke="#F5C518" stroke-width="5" stroke-linecap="round"><line x1="0" y1="0" x2="0" y2="-32"/><line x1="0" y1="0" x2="27.7" y2="16"/><line x1="0" y1="0" x2="-27.7" y2="16"/></g>
+<g fill="#7FD4FF"><circle cx="0" cy="-32" r="6"/><circle cx="27.7" cy="16" r="6"/><circle cx="-27.7" cy="16" r="6"/></g>
+<circle r="16" fill="#F5C518"/>
+<text x="0" y="7" text-anchor="middle" font-family="Bungee, Impact, sans-serif" font-size="20" fill="#15161C">C</text></g>
+<text x="150" y="330" text-anchor="middle" font-family="Bungee, Impact, sans-serif" font-size="20" letter-spacing="2" fill="#7FD4FF">CARD VAULT</text>
+</svg>

@@ -12,6 +12,31 @@ export interface AccountAchievement {
   earnedAt: string;
 }
 
+export type CosmeticCategory = "tableTheme" | "profileBadge" | "collectionDisplay";
+
+export interface SetMastery {
+  setId: string;
+  name: string;
+  available: boolean;
+  collectedCards: number;
+  totalCards: number | null;
+  percent: number;
+  rank: "explorer" | "collector" | "archivist" | "master" | null;
+  rankLabel: "Explorer" | "Collector" | "Archivist" | "Master" | null;
+}
+
+export interface CosmeticItem {
+  id: string;
+  category: CosmeticCategory;
+  name: string;
+  description: string;
+  style: string;
+  unlockDescription: string;
+  unlocked: boolean;
+  unlockedAt: string | null;
+  equipped: boolean;
+}
+
 export interface AccountProgression {
   xp: number;
   lifetimeXp: number;
@@ -30,7 +55,43 @@ export interface AccountProgression {
   lastActivityDate: string | null;
   unlockedSets: AccountUnlock[];
   collections: Record<string, string[]>;
+  mastery: SetMastery[];
+  cosmetics: {
+    unlocked: string[];
+    equipped: Record<CosmeticCategory, string>;
+  };
   achievements: AccountAchievement[];
+}
+
+export interface CosmeticProfile {
+  account: AccountData;
+  mastery: SetMastery[];
+  items: CosmeticItem[];
+}
+
+export interface PackThemeProgress {
+  current: number;
+  target: number;
+  label: string;
+}
+
+export interface PackThemeItem {
+  id: string;
+  order: number;
+  name: string;
+  tier: string;
+  tagline: string;
+  unlockText: string;
+  palette: Record<string, string>;
+  assets: { pack: string; cardBack: string };
+  unlocked: boolean;
+  unlockedAt: string | null;
+  progress: PackThemeProgress;
+}
+
+export interface PackThemeProfile {
+  selectedThemeId: string;
+  themes: PackThemeItem[];
 }
 
 export interface AccountData {
@@ -40,8 +101,7 @@ export interface AccountData {
     firstName: string;
     avatar: AccountAvatar | null;
     role: "user" | "admin";
-    accountStatus:
-      "pending_approval" | "active" | "suspended";
+    accountStatus: "pending_approval" | "active" | "suspended";
   };
   progression: AccountProgression;
 }
@@ -110,6 +170,7 @@ export interface PackRevealResult {
   rewards: Array<{ id: string; label: string; xp: number }>;
   complete: boolean;
   godPackAwarded: boolean;
+  newThemesUnlocked: string[];
   account: AccountData;
 }
 
@@ -217,6 +278,21 @@ export async function updateAccountProfile(input: {
   return response.account;
 }
 
+export async function getCosmeticProfile(): Promise<CosmeticProfile> {
+  return request<CosmeticProfile>("/cosmetics");
+}
+
+export async function equipCosmetic(
+  category: CosmeticCategory,
+  cosmeticId: string,
+): Promise<AccountData> {
+  const response = await request<{ account: AccountData }>("/cosmetics/equip", {
+    method: "POST",
+    body: JSON.stringify({ category, cosmeticId }),
+  });
+  return response.account;
+}
+
 export async function changeAccountPassword(input: {
   currentPassword: string;
   newPassword: string;
@@ -251,6 +327,7 @@ export async function startPackSession(
   setId: string,
   totalCards: number,
   packType: "standard" | "god" = "standard",
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
 ): Promise<{
   packId: string;
   godPackFree: boolean;
@@ -259,7 +336,7 @@ export async function startPackSession(
 }> {
   return request("/packs/start", {
     method: "POST",
-    body: JSON.stringify({ setId, totalCards, packType }),
+    body: JSON.stringify({ setId, totalCards, packType, timeZone }),
   });
 }
 
@@ -269,10 +346,35 @@ export async function recordPackReveal(input: {
   cardId: string;
   rarity: string;
   finish: string;
+  energyTypes?: string[];
 }): Promise<PackRevealResult> {
-  return request("/packs/reveal", {
+  const result = await request<Partial<PackRevealResult> & {
+    newlyUnlockedThemeIds?: unknown;
+  }>("/packs/reveal", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+  const themeIds = result.newThemesUnlocked ?? result.newlyUnlockedThemeIds;
+
+  return {
+    ...result,
+    rewards: Array.isArray(result.rewards) ? result.rewards : [],
+    newThemesUnlocked: Array.isArray(themeIds)
+      ? themeIds.filter((themeId): themeId is string => typeof themeId === "string")
+      : [],
+  } as PackRevealResult;
+}
+
+export async function getPackThemes(): Promise<PackThemeProfile> {
+  return request("/pack-themes");
+}
+
+export async function selectPackTheme(
+  themeId: string,
+): Promise<PackThemeProfile> {
+  return request("/pack-themes/select", {
+    method: "POST",
+    body: JSON.stringify({ themeId }),
   });
 }
 

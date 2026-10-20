@@ -17,6 +17,7 @@ This is a digital simulation only. Collection progress does not represent owners
 - Pack catalogues are loaded from TCGdex. The current set list and pull-rate profiles are configured in the app.
 - Only sets whose full English TCGdex card records all contain image URLs are eligible for unlocks. That check is cached for 12 hours.
 - XP, daily streak state, achievements, pack reveals, and set unlocks are stored in SQLite on the server.
+- Account cosmetics, mastery milestones, and the last checked TCGdex card-ID catalogues are also stored in SQLite.
 
 ## Recommended phases
 
@@ -62,14 +63,22 @@ Expand the daily streak feature without making missed days feel punishing.
 - Never lock previously unlocked sets or remove collection progress after a missed day.
 - Keep rewards bounded so streaks and repeated trivial actions cannot overwhelm the set unlock economy.
 
-### Phase 5 — Rewards and collection tools
+### Phase 5 — Rewards and collection tools (implemented foundation)
 
-Use progression to personalize the simulator without changing card odds.
+The first Phase 5 release adds account-backed cosmetic rewards and set mastery without changing card odds or awarding XP for mastery.
 
-- Unlock pack wrappers, card backs, table themes, profile badges, and collection display styles.
-- Add set mastery badges and a profile summary of completed sets and milestones.
+- Track each artwork-complete set by unique card identity, with Explorer (25%), Collector (50%), Archivist (75%), and Master (100%) ranks. Duplicates do not advance mastery.
+- Show per-set mastery emblems, completed-set totals, and account milestones in the private account badge case. Existing collections are backfilled idempotently; imported valid cards count toward mastery without minting XP.
+- Provide an account-synced wardrobe for pack wrappers, card backs, table themes, profile badges, and collection display styles. The server validates every equip request against the player’s unlocked inventory.
+- Apply the selected wrapper, card back, and table theme in the pack opening flow. Offer card-grid, binder-page, and rarity-grouped collection views.
+- Persist the English TCGdex card-ID catalogues used for artwork eligibility and mastery counts. Catalogue refreshes follow the existing 12-hour cache window.
+- Keep all rewards cosmetic. They do not change pull rates, pack contents, or XP.
+- Use original enamel-style badge artwork and motifs; do not copy official game badge designs or assets.
+
+The rest of Phase 5 remains future work:
+
 - Add duplicate counts and collection statistics by rarity and finish.
-- Add a binder view for organizing collected cards and a shareable, read-only collection link with privacy controls.
+- Add binder page organization and a shareable, read-only collection link with privacy controls.
 - Consider a “surprise me” pack option that selects from sets the player has unlocked.
 
 Cosmetics and achievements should be the default rewards. Avoid paid boosts or rewards that alter pull rates; rates should remain visible and consistent with each set's stated profile.
