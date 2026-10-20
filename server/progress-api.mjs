@@ -68,6 +68,7 @@ const GOD_PACK_BASE_XP_COST = 1_000;
 const GOD_PACK_XP_COST_STEP = 500;
 const GOD_PACK_DEFAULT_LIMIT = 1;
 const GOD_PACK_DEFAULT_WINDOW_DAYS = 7;
+const GOD_PACK_FREE_UNLOCK_CHANCE = 1 / 1_000;
 const PACK_SET_DEFINITIONS = packSetConfig;
 let PACK_SETS = PACK_SET_DEFINITIONS;
 const setAvailabilityCache = new Map();
@@ -175,6 +176,19 @@ database.exec(`
 
   CREATE INDEX IF NOT EXISTS god_pack_history_user_set_time_idx
     ON god_pack_purchase_history(user_id, set_id, purchased_at);
+
+  CREATE TABLE IF NOT EXISTS god_pack_free_credits (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    set_id TEXT NOT NULL,
+    source_pack_id TEXT NOT NULL UNIQUE REFERENCES pack_sessions(id) ON DELETE CASCADE,
+    redeemed_by_pack_id TEXT UNIQUE REFERENCES pack_sessions(id) ON DELETE SET NULL,
+    awarded_at TEXT NOT NULL,
+    redeemed_at TEXT
+  ) STRICT;
+
+  CREATE INDEX IF NOT EXISTS god_pack_free_credits_user_set_idx
+    ON god_pack_free_credits(user_id, set_id, redeemed_at);
 
   CREATE TABLE IF NOT EXISTS pack_reveals (
     pack_id TEXT NOT NULL REFERENCES pack_sessions(id) ON DELETE CASCADE,
@@ -472,6 +486,27 @@ const statement = {
       (purchase_id, user_id, pack_id, set_id, purchased_at)
      VALUES (?, ?, ?, ?, ?)`,
   ),
+  countAvailableGodPackCredits: database.prepare(
+    "SELECT COUNT(*) AS count FROM god_pack_free_credits WHERE user_id = ? AND set_id = ? AND redeemed_by_pack_id IS NULL",
+  ),
+  getAvailableGodPackCredit: database.prepare(
+    `SELECT id FROM god_pack_free_credits
+     WHERE user_id = ? AND set_id = ? AND redeemed_by_pack_id IS NULL
+     ORDER BY awarded_at LIMIT 1`,
+  ),
+  insertGodPackFreeCredit: database.prepare(
+    `INSERT INTO god_pack_free_credits
+      (id, user_id, set_id, source_pack_id, awarded_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  ),
+  redeemGodPackFreeCredit: database.prepare(
+    `UPDATE god_pack_free_credits
+     SET redeemed_by_pack_id = ?, redeemed_at = ?
+     WHERE id = ? AND redeemed_by_pack_id IS NULL`,
+  ),
+  hasGodPackAwardFromPack: database.prepare(
+    "SELECT 1 AS awarded FROM god_pack_free_credits WHERE source_pack_id = ?",
+  ),
   insertReveal: database.prepare(
     "INSERT INTO pack_reveals (pack_id, position, card_id, rarity, finish, created_at) VALUES (?, ?, ?, ?, ?, ?)",
   ),
@@ -718,7 +753,14 @@ function getGodPackStatus(userId, setId, now = new Date()) {
     openedInWindow,
     remaining: Math.max(set.godPackLimit - openedInWindow, 0),
     availableAt,
+    freeCredits:
+      statement.countAvailableGodPackCredits.get(userId, setId)?.count ?? 0,
   };
+}
+
+function rollsFreeGodPackUnlock() {
+  const roll = randomBytes(4).readUInt32BE(0) / 0x1_0000_0000;
+  return roll < GOD_PACK_FREE_UNLOCK_CHANCE;
 }
 
 function snapshot(user) {
@@ -1699,6 +1741,8 @@ const server = createServer(async (request, response) => {
         );
       }
       const packId = ulid();
+      let usedFreeGodPack = false;
+      let freeGodPackCreditId = null;
       const dailyReward = transaction(() => {
         if (packType === "god") {
           const godPackStatus = getGodPackStatus(user.id, setId);
@@ -1709,23 +1753,32 @@ const server = createServer(async (request, response) => {
               "god_pack_limit_reached",
             );
           }
-          const progress = statement.getProgress.get(user.id);
-          const cost = configuredSet.godPackXpCost;
-          if ((progress?.xp ?? 0) < cost) {
-            throw apiError(
-              `You need ${cost - (progress?.xp ?? 0)} more available XP to buy this God Pack.`,
-              409,
-              "not_enough_xp",
+          const freeCredit = statement.getAvailableGodPackCredit.get(
+            user.id,
+            setId,
+          );
+          if (freeCredit) {
+            usedFreeGodPack = true;
+            freeGodPackCreditId = freeCredit.id;
+          } else {
+            const progress = statement.getProgress.get(user.id);
+            const cost = configuredSet.godPackXpCost;
+            if ((progress?.xp ?? 0) < cost) {
+              throw apiError(
+                `You need ${cost - (progress?.xp ?? 0)} more available XP to buy this God Pack.`,
+                409,
+                "not_enough_xp",
+              );
+            }
+            statement.updateProgress.run(
+              (progress?.xp ?? 0) - cost,
+              progress?.lifetime_xp ?? 0,
+              progress?.streak_days ?? 0,
+              progress?.last_activity_date ?? null,
+              new Date().toISOString(),
+              user.id,
             );
           }
-          statement.updateProgress.run(
-            (progress?.xp ?? 0) - cost,
-            progress?.lifetime_xp ?? 0,
-            progress?.streak_days ?? 0,
-            progress?.last_activity_date ?? null,
-            new Date().toISOString(),
-            user.id,
-          );
         }
         const daily = claimDailyStreak(user.id);
         statement.insertPack.run(
@@ -1745,12 +1798,20 @@ const server = createServer(async (request, response) => {
             setId,
             purchasedAt,
           );
+          if (freeGodPackCreditId) {
+            statement.redeemGodPackFreeCredit.run(
+              packId,
+              purchasedAt,
+              freeGodPackCreditId,
+            );
+          }
         }
         return daily;
       });
       sendJson(response, 201, {
         packId,
         dailyReward,
+        godPackFree: usedFreeGodPack,
         account: snapshot(statement.findUserById.get(user.id)),
       });
       return;
@@ -1797,6 +1858,9 @@ const server = createServer(async (request, response) => {
             earnedXp: 0,
             rewards: [],
             complete: pack.complete === 1,
+            godPackAwarded: Boolean(
+              statement.hasGodPackAwardFromPack.get(packId),
+            ),
             account: snapshot(statement.findUserById.get(user.id)),
           });
           return;
@@ -1841,6 +1905,7 @@ const server = createServer(async (request, response) => {
         const complete = nextCount === pack.total_cards;
         const rewards = [];
         let earnedXp = 0;
+        let godPackAwarded = false;
         const reward = (id, label, xp) => {
           rewards.push({ id, label, xp });
           earnedXp += xp;
@@ -1884,14 +1949,35 @@ const server = createServer(async (request, response) => {
           });
           earnedXp += 25;
         }
-        if (complete) reward("pack-complete", "Pack completed", 3);
+        if (complete) {
+          reward("pack-complete", "Pack completed", 3);
+          const hasUnspentFreeCredit =
+            statement.countAvailableGodPackCredits.get(
+              user.id,
+              pack.set_id,
+            ).count > 0;
+          if (
+            pack.pack_type === "standard" &&
+            !hasUnspentFreeCredit &&
+            rollsFreeGodPackUnlock()
+          ) {
+            statement.insertGodPackFreeCredit.run(
+              ulid(),
+              user.id,
+              pack.set_id,
+              packId,
+              now,
+            );
+            godPackAwarded = true;
+          }
+        }
         statement.updatePack.run(
           nextCount,
           complete ? 1 : 0,
           complete ? now : null,
           packId,
         );
-        return { earnedXp, rewards, complete };
+        return { earnedXp, rewards, complete, godPackAwarded };
       });
       sendJson(response, 200, {
         ...result,

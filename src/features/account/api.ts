@@ -23,6 +23,7 @@ export interface AccountProgression {
       openedInWindow: number;
       remaining: number;
       availableAt: string | null;
+      freeCredits: number;
     }
   >;
   streakDays: number;
@@ -108,6 +109,7 @@ export interface PackRevealResult {
   earnedXp: number;
   rewards: Array<{ id: string; label: string; xp: number }>;
   complete: boolean;
+  godPackAwarded: boolean;
   account: AccountData;
 }
 
@@ -251,6 +253,7 @@ export async function startPackSession(
   packType: "standard" | "god" = "standard",
 ): Promise<{
   packId: string;
+  godPackFree: boolean;
   account: AccountData;
   dailyReward: { xp: number; streakDays: number; claimed: boolean };
 }> {

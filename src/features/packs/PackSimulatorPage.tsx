@@ -325,25 +325,28 @@ export function PackSimulatorPage() {
   const godPackWindowDays = selectedSetAvailability?.godPackWindowDays ?? 7;
   const godPackStatus = account?.progression.godPack[selectedSetId];
   const godPackRemaining = godPackStatus?.remaining ?? godPackLimit;
+  const godPackFreeCredits = godPackStatus?.freeCredits ?? 0;
   const canOpenGodPack =
     account !== null &&
     canOpenSelectedSet &&
     godPackPoolSize > 0 &&
     godPackRemaining > 0 &&
-    account.progression.xp >= godPackXpCost;
+    (godPackFreeCredits > 0 || account.progression.xp >= godPackXpCost);
   const godPackButtonLabel = opening
     ? openedPackType === "god"
       ? "Preparing God Pack…"
       : "Opening pack…"
     : godPackRemaining <= 0
       ? "God Pack limit reached for this set"
-      : !catalogue
-        ? "Checking God Pack pool…"
-        : godPackPoolSize === 0
-          ? "No IR+ cards in this set"
-          : (account?.progression.xp ?? 0) < godPackXpCost
-            ? `God Pack · ${godPackXpCost.toLocaleString()} XP needed`
-            : `Open God Pack · ${godPackXpCost.toLocaleString()} XP`;
+      : godPackFreeCredits > 0
+        ? "Open free God Pack"
+        : !catalogue
+          ? "Checking God Pack pool…"
+          : godPackPoolSize === 0
+            ? "No IR+ cards in this set"
+            : (account?.progression.xp ?? 0) < godPackXpCost
+              ? `God Pack · ${godPackXpCost.toLocaleString()} XP needed`
+              : `Open God Pack · ${godPackXpCost.toLocaleString()} XP`;
   const eligibleProfiles = PACK_PROFILES.filter((candidate) =>
     setAvailabilityQuery.data
       ? availableSetMap.get(candidate.setId)?.available !== false
@@ -440,7 +443,9 @@ export function PackSimulatorPage() {
         setAccount(session.account);
         if (packType === "god") {
           setProgressMessage(
-            `God Pack purchased for ${godPackXpCost.toLocaleString()} XP · ${godPackLimit} per ${godPackPeriodLabel(godPackWindowDays)}`,
+            session.godPackFree
+              ? `Free God Pack credit used · ${godPackLimit} per ${godPackPeriodLabel(godPackWindowDays)}`
+              : `God Pack purchased for ${godPackXpCost.toLocaleString()} XP · ${godPackLimit} per ${godPackPeriodLabel(godPackWindowDays)}`,
           );
         } else if (session.dailyReward.claimed) {
           setProgressMessage(
@@ -506,11 +511,17 @@ export function PackSimulatorPage() {
       });
       setAccount(result.account);
       setPendingReveal(null);
+      const revealMessages = result.rewards.map(
+        (reward) => `+${reward.xp} XP ${reward.label}`,
+      );
+      if (result.godPackAwarded) {
+        revealMessages.push(
+          "Extremely rare: a free God Pack unlocked for this set!",
+        );
+      }
       setProgressMessage(
-        result.rewards.length > 0
-          ? result.rewards
-              .map((reward) => `+${reward.xp} XP ${reward.label}`)
-              .join(" · ")
+        revealMessages.length > 0
+          ? revealMessages.join(" · ")
           : "Card reveal saved · duplicate cards do not add XP",
       );
       return true;
@@ -848,6 +859,13 @@ export function PackSimulatorPage() {
                     rarity rates. Cards already in your collection can appear
                     again. This set allows {godPackLimit} per{" "}
                     {godPackPeriodLabel(godPackWindowDays)} in a rolling window.
+                    {godPackFreeCredits > 0 && (
+                      <> You have a free God Pack credit for this set.</>
+                    )}
+                    {" "}Complete a standard pack while signed in for a 1 in
+                    1,000 chance to unlock a free God Pack for this set. One
+                    unspent credit can be held per set, and free openings count
+                    toward the limit.
                     {godPackStatus?.availableAt && (
                       <>
                         {" "}
